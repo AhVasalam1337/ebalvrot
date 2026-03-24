@@ -1,6 +1,1 @@
-{
-  "version": 2,
-  "rewrites": [
-    { "source": "/api/bot", "destination": "/api/bot.py" }
-  ]
-}
+{ "rewrites": [{ "source": "/api/bot", "destination": "/api/bot.py" }] }
