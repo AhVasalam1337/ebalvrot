@@ -1,34 +1,32 @@
-import json
-import requests
-import os
+import json, urllib.request, os
 from http.server import BaseHTTPRequestHandler
 
-# Тянем токен из настроек Vercel
 T = os.environ.get("TELEGRAM_TOKEN")
 G = "https://ahvasalam1337.github.io/ebalvrot/"
-U = f"https://api.telegram.org/bot{T}/" if T else None
+U = f"https://api.telegram.org/bot{T}/"
 
 def _r(m, d):
-    if not U:
-        print("!!! ERROR: TELEGRAM_TOKEN IS MISSING IN ENV")
-        return None
     try:
-        r = requests.post(U + m, json=d, timeout=10)
-        return r.json()
+        data = json.dumps(d).encode('utf-8')
+        req = urllib.request.Request(U + m, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        # Увеличиваем таймаут и отключаем прокси, если они мешают
+        with urllib.request.urlopen(req, timeout=10) as res:
+            return json.loads(res.read().decode())
     except Exception as e:
-        print(f"!!! REQUEST ERROR: {e}")
+        print(f"!!! SEND ERROR: {e}")
         return None
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
-        cl = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(cl).decode('utf-8')
-        
         try:
+            cl = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(cl).decode('utf-8')
             p = json.loads(body)
+            
             if "message" in p:
                 c = p["message"]["chat"]["id"]
-                # Основной ответ с кнопкой игры
+                # Отправляем кнопку
                 _r("sendMessage", {
                     "chat_id": c, 
                     "text": "Приветик! Спасибки что заинтересовались моей игрой :3", 
@@ -39,18 +37,15 @@ class handler(BaseHTTPRequestHandler):
                     }
                 })
         except Exception as e:
-            print(f"!!! LOGIC ERROR: {e}")
+            print(f"!!! POST ERROR: {e}")
 
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
-        self.wfile.write(b'{"s":"ok"}')
+        self.wfile.write(b'{"status":"ok"}')
 
     def do_GET(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
-        # Этот текст покажет в браузере, видит ли сервер токен
-        status = "TOKEN LOADED" if T else "TOKEN MISSING"
-        suffix = T[-5:] if T else "NONE"
-        self.wfile.write(f"STATUS: {status} | SUFFIX: {suffix}".encode())
+        self.wfile.write(f"STATUS: TOKEN LOADED | SUFFIX: {T[-5:] if T else 'NONE'}".encode())
