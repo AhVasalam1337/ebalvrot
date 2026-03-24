@@ -13,14 +13,13 @@ export const settingsMarkup = {
     reply_markup: {
         inline_keyboard: [
             [{ text: "📑 Положняк", callback_data: "get_context" }],
-            [{ text: "📜 Правила", callback_data: "manage_rules" }],
+            [{ text: "📜 Правила чата", callback_data: "manage_rules" }],
             [{ text: "✏️ Название", callback_data: "rename_start" }, { text: "🗑 Удалить", callback_data: "manage_delete" }],
             [{ text: "⬅️ Назад", callback_data: "close_settings" }]
         ]
     }
 };
 
-// Кнопки управления правилами
 export const rulesControlMarkup = {
     reply_markup: {
         inline_keyboard: [
@@ -30,7 +29,6 @@ export const rulesControlMarkup = {
     }
 };
 
-// Список правил для удаления
 export function getRulesDeleteMarkup(rules) {
     const buttons = rules.map((r, index) => ([{ 
         text: `🗑 ${r.substring(0, 20)}...`, 
