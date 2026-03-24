@@ -2,50 +2,47 @@ import json, urllib.request, os
 from http.server import BaseHTTPRequestHandler
 
 T = os.environ.get("TELEGRAM_TOKEN")
-G = "https://ahvasalam1337.github.io/ebalvrot/"
-U = f"https://api.telegram.org/bot{T}/"
-
-def _r(m, d):
-    try:
-        data = json.dumps(d).encode('utf-8')
-        req = urllib.request.Request(U + m, data=data, method="POST")
-        req.add_header("Content-Type", "application/json")
-        # Увеличиваем таймаут и отключаем прокси, если они мешают
-        with urllib.request.urlopen(req, timeout=10) as res:
-            return json.loads(res.read().decode())
-    except Exception as e:
-        print(f"!!! SEND ERROR: {e}")
-        return None
+U = f"https://api.telegram.org/bot{T}/sendMessage"
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
-            cl = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(cl).decode('utf-8')
-            p = json.loads(body)
+            # 1. Читаем входящий сигнал
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+            data = json.loads(body)
             
-            if "message" in p:
-                c = p["message"]["chat"]["id"]
-                # Отправляем кнопку
-                _r("sendMessage", {
-                    "chat_id": c, 
-                    "text": "Приветик! Спасибки что заинтересовались моей игрой :3", 
-                    "reply_markup": {
-                        "inline_keyboard": [[
-                            {"text": "ОТКРЫТЬ ИГРУ И ИГРАТЬ В ИГРУ 🕹", "web_app": {"url": G}}
-                        ]]
-                    }
-                })
+            # 2. Пытаемся вытащить chat_id
+            if "message" in data:
+                chat_id = data["message"]["chat"]["id"]
+                
+                # 3. ПРЯМАЯ ОТПРАВКА (БЕЗ ФУНКЦИЙ)
+                payload = {
+                    "chat_id": chat_id,
+                    "text": "СИСТЕМА ЖИВА. АРХИТЕКТОР, ПРИЕМ!"
+                }
+                
+                req = urllib.request.Request(
+                    U, 
+                    data=json.dumps(payload).encode('utf-8'),
+                    headers={'Content-Type': 'application/json'},
+                    method="POST"
+                )
+                # Отправляем и не ждем ответа (fire and forget для теста)
+                urllib.request.urlopen(req, timeout=5)
+                
         except Exception as e:
-            print(f"!!! POST ERROR: {e}")
+            # Если тут будет ошибка, мы увидим её в логах Vercel
+            print(f"DEBUG ERROR: {e}")
 
+        # 4. ВСЕГДА ОТВЕЧАЕМ ТЕЛЕГРАМУ 200 OK
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
-        self.wfile.write(b'{"status":"ok"}')
+        self.wfile.write(b'{"ok":true}')
 
     def do_GET(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
-        self.wfile.write(f"STATUS: TOKEN LOADED | SUFFIX: {T[-5:] if T else 'NONE'}".encode())
+        self.wfile.write(f"ENDPOINT READY. TOKEN: {T[-5:] if T else 'MISSING'}".encode())
