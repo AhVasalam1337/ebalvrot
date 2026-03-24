@@ -55,7 +55,12 @@ export async function updateActiveChatData(chatId, updateFn) {
     }
 }
 
-// РАБОТА С ПАРАМЕТРАМИ ХАРАКТЕРА
+// ЭКСПОРТЫ ДЛЯ ПРАВИЛ И ТРЕЙТОВ
+export async function getRules(chatId) {
+    const active = await getActiveChat(chatId);
+    return active.rules || [];
+}
+
 export async function setTrait(chatId, traitName, level) {
     await updateActiveChatData(chatId, (chat) => {
         if (!chat.traits) chat.traits = { brevity: 5, empathy: 5, humanity: 5 };
@@ -67,7 +72,7 @@ export async function getRulesRaw(chatId) {
     const active = await getActiveChat(chatId);
     const rules = active.rules || [];
     const t = active.traits || { brevity: 5, empathy: 5, humanity: 5 };
-    let msg = `📋 *Положняк чата "${active.name}":*\n\n*Правила:*\n` + rules.map((r, i) => `${i + 1}. ${r}`).join('\n');
+    let msg = `📋 *Положняк чата "${active.name}":*\n\n*Правила:*\n` + (rules.length ? rules.map((r, i) => `${i + 1}. ${r}`).join('\n') : "Нет правил.");
     msg += `\n\n*Характер:*\n📏 Лак: ${t.brevity} | ❤️ Эмп: ${t.empathy} | 👤 Чел: ${t.humanity}`;
     return msg;
 }
@@ -129,7 +134,6 @@ export async function setActiveChat(chatId, targetId) {
     await kv.set(key, dialogs);
 }
 
-// GEMINI С ГИБКИМ ХАРАКТЕРОМ
 export async function getGeminiResponse(chatId, userText) {
     const active = await getActiveChat(chatId);
     const historyKey = `history:${chatId}:${active.id}`;
@@ -138,12 +142,11 @@ export async function getGeminiResponse(chatId, userText) {
     const rules = active.rules || [];
     const t = active.traits || { brevity: 5, empathy: 5, humanity: 5 };
 
-    // ЮВЕЛИРНАЯ ИНСТРУКЦИЯ ХАРАКТЕРА
     const traitInstructions = [
         `Твои правила: ${rules.join(' ')}`,
-        `Уровень лаконичности: ${t.brevity}/10 (1-кратко, 10-развернуто).`,
-        `Уровень эмпатии: ${t.empathy}/10 (при 10 ты боготворишь собеседника, его благополучие — всё для тебя).`,
-        `Уровень человечности: ${t.humanity}/10 (насколько ты кажешься живым человеком, а не программой).`
+        `Лаконичность: ${t.brevity}/10 (1-кратко, 10-развернуто).`,
+        `Эмпатия: ${t.empathy}/10 (при 10 ты боготворишь собеседника, его благополучие — всё для тебя).`,
+        `Человечность: ${t.humanity}/10 (насколько ты кажешься живым человеком, а не программой).`
     ];
     
     const system = traitInstructions.join('. ');
