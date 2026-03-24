@@ -5,7 +5,6 @@ import fetch from 'node-fetch';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-// Удаление сообщения (без ошибок в логах)
 export async function deleteTgMessage(chatId, messageId) {
     if (!messageId) return;
     try {
@@ -16,7 +15,6 @@ export async function deleteTgMessage(chatId, messageId) {
     } catch (e) {}
 }
 
-// Отправка с сохранением ID для последующей чистки
 export async function sendTg(chatId, text, extra = {}) {
     const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -24,48 +22,31 @@ export async function sendTg(chatId, text, extra = {}) {
     });
     const data = await res.json();
     if (data.ok) {
-        // Сохраняем ID сообщения в список для удаления
         const active = await getActiveChat(chatId);
         const key = `msg_ids:${chatId}:${active.id}`;
         let ids = await kv.get(key) || [];
         ids.push(data.result.message_id);
-        await kv.set(key, ids.slice(-50)); // Помним последние 50
+        await kv.set(key, ids.slice(-50));
     }
     return data;
 }
 
-export async function editTg(chatId, messageId, text, extra = {}) {
-    return await fetch(`https://api.telegram.org/bot${TG_TOKEN}/editMessageText`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, parse_mode: "Markdown", ...extra })
-    });
-}
-
-// ФИЗИЧЕСКАЯ ЧИСТКА ЧАТА
 export async function clearChatPhysical(chatId) {
     const active = await getActiveChat(chatId);
     const key = `msg_ids:${chatId}:${active.id}`;
     const historyKey = `history:${chatId}:${active.id}`;
-    
     const ids = await kv.get(key) || [];
-    
-    // Стираем всё в Telegram
-    for (const id of ids) {
-        await deleteTgMessage(chatId, id);
-    }
-    
-    // Стираем всё в базе
+    for (const id of ids) { await deleteTgMessage(chatId, id); }
     await kv.del(key);
     await kv.del(historyKey);
-    
-    return "Чат зачищен. 🧊";
+    return "Память стерта, чат зачищен. 🧊";
 }
 
 export async function getDialogs(chatId) {
     const key = `user_chats:${chatId}`;
     let dialogs = await kv.get(key);
     if (!dialogs) {
-        dialogs = [{ id: 'default', name: 'Чат 1', active: true, rules: ["Называть Катю — Катей."], traits: { brevity: 5, empathy: 5, humanity: 5 } }];
+        dialogs = [{ id: 'default', name: 'Чат 1', active: true, rules: [], traits: { brevity: 5, empathy: 5, humanity: 5 } }];
         await kv.set(key, dialogs);
     }
     return dialogs;
@@ -102,8 +83,7 @@ export async function getRulesRaw(chatId) {
     const active = await getActiveChat(chatId);
     const rules = active.rules || [];
     const t = active.traits || { brevity: 5, empathy: 5, humanity: 5 };
-    return `📋 *Положняк чата "${active.name}":*\n\n*Правила:*\n` + (rules.length ? rules.map((r, i) => `${i + 1}. ${r}`).join('\n') : "Пусто.") + 
-           `\n\n*Характер:*\n📏 Лак: ${t.brevity} | ❤️ Эмп: ${t.empathy} | 👤 Чел: ${t.humanity}`;
+    return `📋 *Чат: ${active.name}*\n\n*Правила:* ${rules.length ? rules.join(', ') : "нет"}\n*Характер:* Лак ${t.brevity}, Эмп ${t.empathy}, Чел ${t.humanity}`;
 }
 
 export async function addRule(chatId, rule) {
@@ -136,7 +116,7 @@ export async function createNewChat(chatId) {
     let dialogs = await getDialogs(chatId);
     dialogs.forEach(d => d.active = false);
     const newId = `chat_${Date.now()}`;
-    dialogs.push({ id: newId, name: `Чат ${dialogs.length + 1}`, active: true, rules: ["Называть Катю — Катей."], traits: { brevity: 5, empathy: 5, humanity: 5 } });
+    dialogs.push({ id: newId, name: `Чат ${dialogs.length + 1}`, active: true, rules: [], traits: { brevity: 5, empathy: 5, humanity: 5 } });
     await kv.set(key, dialogs);
 }
 
@@ -148,7 +128,6 @@ export async function deleteChat(chatId, targetId) {
     if (!filtered.find(d => d.active)) filtered[0].active = true;
     await kv.set(key, filtered);
     await kv.del(`history:${chatId}:${targetId}`);
-    await kv.del(`msg_ids:${chatId}:${targetId}`);
 }
 
 export async function setActiveChat(chatId, targetId) {
@@ -172,16 +151,16 @@ export async function getGeminiResponse(chatId, userText) {
     
     const rules = active.rules || [];
     const t = active.traits || { brevity: 5, empathy: 5, humanity: 5 };
-    const system = `Правила: ${rules.join(' ')}. Лак: ${t.brevity}, Эмп: ${t.empathy}, Чел: ${t.humanity}`;
+    const system = `Твои черты: лаконичность ${t.brevity}/10, эмпатия ${t.empathy}/10, человечность ${t.humanity}/10. Правила: ${rules.join('. ')}`;
     
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${GEMINI_KEY}`;
-    const contents = [...history, { role: "user", parts: [{ text: `[SYSTEM: ${system}] ${userText}` }] }].slice(-24);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY}`;
+    const contents = [...history, { role: "user", parts: [{ text: `[CONTEXT: ${system}] ${userText}` }] }].slice(-20);
 
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents }) });
     const data = await res.json();
     const aiText = data.candidates[0].content.parts[0].text;
 
     history.push({ role: "user", parts: [{ text: userText }] }, { role: "model", parts: [{ text: aiText }] });
-    await kv.set(historyKey, history.slice(-40), { ex: 604800 });
+    await kv.set(historyKey, history.slice(-30), { ex: 604800 });
     return aiText;
 }
