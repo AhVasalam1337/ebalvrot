@@ -13,12 +13,40 @@ export const settingsMarkup = {
     reply_markup: {
         inline_keyboard: [
             [{ text: "📑 Положняк", callback_data: "get_context" }],
-            [{ text: "📜 Правила чата", callback_data: "manage_rules" }],
+            [{ text: "📜 Правила", callback_data: "manage_rules" }, { text: "🎭 Характер", callback_data: "manage_traits" }],
             [{ text: "✏️ Название", callback_data: "rename_start" }, { text: "🗑 Удалить", callback_data: "manage_delete" }],
             [{ text: "⬅️ Назад", callback_data: "close_settings" }]
         ]
     }
 };
+
+// Меню выбора черты характера
+export function getTraitsMarkup(traits) {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: `📏 Лаконичность: ${traits.brevity || 5}`, callback_data: "trait_edit:brevity" }],
+                [{ text: `❤️ Эмпатия: ${traits.empathy || 5}`, callback_data: "trait_edit:empathy" }],
+                [{ text: `👤 Человечность: ${traits.humanity || 5}`, callback_data: "trait_edit:humanity" }],
+                [{ text: "⬅️ Назад", callback_data: "manage_rules" }] // Вернем в правила или настройки
+            ]
+        }
+    };
+}
+
+// Кнопки для изменения значения (1-10)
+export function getTraitLevelMarkup(traitName) {
+    const levels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const buttons = [];
+    for (let i = 0; i < levels.length; i += 5) {
+        buttons.push(levels.slice(i, i + 5).map(l => ({ 
+            text: `${l}`, 
+            callback_data: `trait_set:${traitName}:${l}` 
+        })));
+    }
+    buttons.push([{ text: "⬅️ Отмена", callback_data: "manage_traits" }]);
+    return { reply_markup: { inline_keyboard: buttons } };
+}
 
 export const rulesControlMarkup = {
     reply_markup: {
