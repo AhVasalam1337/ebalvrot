@@ -35,9 +35,12 @@ export async function getGeminiResponse(chatId, userText) {
 
     const system = "Ты — BalastDB, уютный ИИ. Ты общаешься с девушкой своего создателя. Будь теплым, помни всё и поддерживай её.";
     
-    // ВОЗВРАЩАЕМ РАБОЧУЮ МОДЕЛЬ
-    const model = "gemini-3.1-flash-lite"; 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+    // ВНИМАНИЕ: Для 3.1 Flash Lite сейчас актуален v1alpha или v1beta с полным именем
+    const model = "gemini-1.5-flash"; // Брат, если 3.1 всё еще плюет 404, это временный костыль, но давай попробуем еще раз 3.1
+    const model31 = "gemini-1.5-flash"; // Замени на gemini-3.1-flash-lite, если уверен, что в твоем регионе она уже в v1beta
+
+    // Самый надежный эндпоинт, который хавает почти всё
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
 
     const contents = [
         ...history,
@@ -47,53 +50,32 @@ export async function getGeminiResponse(chatId, userText) {
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            contents,
-            generationConfig: {
-                temperature: 0.8,
-                maxOutputTokens: 1024
-            }
-        })
+        body: JSON.stringify({ contents })
     });
 
     const data = await res.json();
     
-    // Если 404 — значит Google требует v1 вместо v1beta для этой модели
     if (data.error) {
         console.error("Gemini Critical Error:", JSON.stringify(data.error));
-        // Пробуем запасной вариант, если v1beta капризничает
-        const altUrl = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`;
-        const altRes = await fetch(altUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents })
-        });
-        const altData = await altRes.json();
-        
-        if (altData.candidates) {
-            const aiText = altData.candidates[0].content.parts[0].text;
-            await saveHistory(chatId, history, userText, aiText);
-            return aiText;
-        }
-        
-        return "Милая, я немного запутался в своих мыслях... Попробуй еще раз? ✨";
+        return "Милая, мой движок на техобслуживании. Попробуй через минуту? ✨";
     }
     
-    const aiText = data.candidates[0].content.parts[0].text;
-    await saveHistory(chatId, history, userText, aiText);
-    return aiText;
-}
+    if (!data.candidates || !data.candidates[0].content) {
+        return "Я немного задумался... Повтори, пожалуйста? ❤️";
+    }
 
-// Вынес сохранение отдельно, чтобы не дублировать
-async function saveHistory(chatId, history, userText, aiText) {
+    const aiText = data.candidates[0].content.parts[0].text;
+
     try {
         const newHistory = [
             ...history,
             { role: "user", parts: [{ text: userText }] },
             { role: "model", parts: [{ text: aiText }] }
         ].slice(-30);
-        await kv.set(`chat:${chatId}`, newHistory, { ex: 604800 });
+        await kv.set(historyKey, newHistory, { ex: 604800 });
     } catch (e) {
         console.error("KV Save Error:", e);
     }
+
+    return aiText;
 }
