@@ -13,11 +13,32 @@ export const settingsMarkup = {
     reply_markup: {
         inline_keyboard: [
             [{ text: "📑 Положняк", callback_data: "get_context" }],
+            [{ text: "📜 Правила", callback_data: "manage_rules" }],
             [{ text: "✏️ Название", callback_data: "rename_start" }, { text: "🗑 Удалить", callback_data: "manage_delete" }],
             [{ text: "⬅️ Назад", callback_data: "close_settings" }]
         ]
     }
 };
+
+// Кнопки управления правилами
+export const rulesControlMarkup = {
+    reply_markup: {
+        inline_keyboard: [
+            [{ text: "➕ Добавить", callback_data: "rule_add_start" }, { text: "➖ Удалить", callback_data: "rule_manage_delete" }],
+            [{ text: "⬅️ Назад", callback_data: "close_settings" }]
+        ]
+    }
+};
+
+// Список правил для удаления
+export function getRulesDeleteMarkup(rules) {
+    const buttons = rules.map((r, index) => ([{ 
+        text: `🗑 ${r.substring(0, 20)}...`, 
+        callback_data: `rule_delete_confirm:${index}` 
+    }]));
+    buttons.push([{ text: "⬅️", callback_data: "manage_rules" }]);
+    return { reply_markup: { inline_keyboard: buttons } };
+}
 
 export function getDialogsMarkup(dialogs) {
     const buttons = dialogs.map(d => ([{ 
