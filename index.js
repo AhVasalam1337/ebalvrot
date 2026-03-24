@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     const userText = body.message.text;
     const TG_TOKEN = process.env.TELEGRAM_TOKEN;
     const GEMINI_KEY = process.env.GEMINI_API_KEY;
-    const MY_ADMIN_ID = "ТВОЙ_CHAT_ID_ЦИФРАМИ"; // Укажи свой ID здесь
+    const MY_ADMIN_ID = 6828357999; // Укажи свой ID здесь
 
     // Уведомление о том, что бот обновился и готов (сработает один раз после пуша)
     if (isNewDeploy) {
