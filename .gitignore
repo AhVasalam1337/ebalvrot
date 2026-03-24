@@ -1,0 +1,28 @@
+# Секреты и конфиги (САМОЕ ВАЖНОЕ)
+.env
+.env.local
+.env.*.local
+
+# Папка с зависимостями (нефорский мусор, весит тонну)
+node_modules/
+jspm_packages/
+
+# Логи и кэш
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.cache/
+
+# Специфические файлы ОС
+.DS_Store
+Thumbs.db
+
+# Настройки редакторов (чтобы не пушить мусор из облака)
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
