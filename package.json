@@ -4,7 +4,9 @@
   "type": "module",
   "dependencies": {
     "@vercel/kv": "latest",
-    "@google/generative-ai": "^0.21.0",
     "node-fetch": "latest"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
