@@ -33,26 +33,35 @@ export async function getGeminiResponse(chatId, userText) {
         console.error("Ошибка BalastDB (KV):", e);
     }
 
-    const system = "Ты — BalastDB, уютный цифровой спутник для любимой женщины своего создателя. Ты помнишь всё, что она говорит, поддерживаешь её и создаешь атмосферу тепла.";
+    const system = "Ты — BalastDB, персональный ИИ для девушки своего создателя. Ты помнишь всё, что она говорит, поддерживаешь её и создаешь атмосферу тепла.";
     
+    // ИСПОЛЬЗУЕМ GEMINI 3.1 FLASH LITE
+    const model = "gemini-3.1-flash-lite"; 
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+
     const contents = [
-        { role: "user", parts: [{ text: `SYSTEM: ${system}` }] },
+        { role: "user", parts: [{ text: `SYSTEM_INSTRUCTION: ${system}` }] },
         ...history,
         { role: "user", parts: [{ text: userText }] }
-    ].slice(-16);
+    ].slice(-20); // 3.1 держит контекст лучше, можно чуть расширить
 
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
+    const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents })
+        body: JSON.stringify({ 
+            contents,
+            generationConfig: {
+                temperature: 0.8,
+                maxOutputTokens: 1024
+            }
+        })
     });
 
     const data = await res.json();
     
-    // Фикс возможного падения, если Gemini вернул ошибку или пустой ответ
-    if (!data.candidates || !data.candidates[0].content) {
-        console.error("Gemini Error:", JSON.stringify(data));
-        return "Милая, я немного задумался... Попробуй написать еще раз? ✨";
+    if (data.error) {
+        console.error("Gemini 3.1 Error:", JSON.stringify(data.error));
+        return "Милая, мой движок 3.1 чихает. Попробуй еще разок через секунду? ✨";
     }
     
     const aiText = data.candidates[0].content.parts[0].text;
@@ -62,10 +71,10 @@ export async function getGeminiResponse(chatId, userText) {
             ...history,
             { role: "user", parts: [{ text: userText }] },
             { role: "model", parts: [{ text: aiText }] }
-        ].slice(-20);
+        ].slice(-24); // Сохраняем побольше для 3.1
         await kv.set(historyKey, newHistory, { ex: 604800 });
     } catch (e) {
-        console.error("Ошибка сохранения истории:", e);
+        console.error("Ошибка сохранения в KV:", e);
     }
 
     return aiText;
