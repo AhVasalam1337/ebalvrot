@@ -33,17 +33,16 @@ export async function getGeminiResponse(chatId, userText) {
         console.error("Ошибка BalastDB (KV):", e);
     }
 
-    const system = "Ты — BalastDB, персональный ИИ для девушки своего создателя. Ты помнишь всё, что она говорит, поддерживаешь её и создаешь атмосферу тепла.";
+    const system = "Ты — BalastDB, персональный ИИ для девушки твоего создателя. Ты помнишь всё, что она говорит, поддерживаешь её и создаешь атмосферу тепла.";
     
-    // ИСПОЛЬЗУЕМ GEMINI 3.1 FLASH LITE
-    const model = "gemini-3.1-flash-lite"; 
+    // ФИКС: Исправлена опечатка в v1beta и уточнена модель 3.1
+    const model = "gemini-3.1-flash-lite-001"; 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
     const contents = [
-        { role: "user", parts: [{ text: `SYSTEM_INSTRUCTION: ${system}` }] },
         ...history,
-        { role: "user", parts: [{ text: userText }] }
-    ].slice(-20); // 3.1 держит контекст лучше, можно чуть расширить
+        { role: "user", parts: [{ text: `[SYSTEM: ${system}] ${userText}` }] }
+    ].slice(-24);
 
     const res = await fetch(url, {
         method: 'POST',
@@ -52,6 +51,7 @@ export async function getGeminiResponse(chatId, userText) {
             contents,
             generationConfig: {
                 temperature: 0.8,
+                topP: 0.95,
                 maxOutputTokens: 1024
             }
         })
@@ -60,10 +60,14 @@ export async function getGeminiResponse(chatId, userText) {
     const data = await res.json();
     
     if (data.error) {
-        console.error("Gemini 3.1 Error:", JSON.stringify(data.error));
-        return "Милая, мой движок 3.1 чихает. Попробуй еще разок через секунду? ✨";
+        console.error("Gemini 3.1 Hard Error:", JSON.stringify(data.error));
+        return "Милая, мой движок 3.1 немного забарахлил. Попробуй еще разок? ✨";
     }
     
+    if (!data.candidates || !data.candidates[0].content) {
+        return "Я задумался о чем-то очень важном... Повтори, пожалуйста? ❤️";
+    }
+
     const aiText = data.candidates[0].content.parts[0].text;
 
     try {
@@ -71,7 +75,7 @@ export async function getGeminiResponse(chatId, userText) {
             ...history,
             { role: "user", parts: [{ text: userText }] },
             { role: "model", parts: [{ text: aiText }] }
-        ].slice(-24); // Сохраняем побольше для 3.1
+        ].slice(-30); // 3.1 отлично держит жирный контекст
         await kv.set(historyKey, newHistory, { ex: 604800 });
     } catch (e) {
         console.error("Ошибка сохранения в KV:", e);
