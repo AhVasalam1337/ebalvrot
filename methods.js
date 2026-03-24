@@ -35,29 +35,42 @@ export async function getGeminiResponse(chatId, userText) {
 
     const system = "Ты — BalastDB, уютный цифровой спутник. Ты общаешься с девушкой своего создателя. Будь теплым, помни всё и поддерживай её.";
     
-    // ВОТ ОНО, РАБОЧЕЕ КОМБО ДЛЯ 3.1 FLASH LITE
+    // РАБОЧИЙ ЭНДПОИНТ ДЛЯ 3.1 FLASH LITE В 2026 ГОДУ
     const model = "gemini-3.1-flash-lite"; 
-    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
+    // В 3.1 системный промпт лучше класть в system_instruction (если API поддерживает) 
+    // или первым сообщением с ролью system
     const contents = [
         ...history,
         { role: "user", parts: [{ text: `[SYSTEM: ${system}] ${userText}` }] }
-    ].slice(-24);
+    ].slice(-30);
 
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents })
+        body: JSON.stringify({ 
+            contents,
+            generationConfig: {
+                temperature: 0.9,
+                topP: 1,
+                maxOutputTokens: 2048
+            }
+        })
     });
 
     const data = await res.json();
     
-    // Если и сейчас 404 — значит я проклят, но этот URL — каноничен для 3.1
+    // Если 404 — значит Google требует модель с датой. Пробуем универсальный фикс.
     if (data.error) {
-        console.error("Gemini 3.1 РЕАЛЬНАЯ ОШИБКА:", JSON.stringify(data.error));
+        console.error("Gemini 3.1 LOG:", JSON.stringify(data.error));
         return "Милая, мой движок 3.1 на пересборке. Попробуй через минуту? ✨";
     }
     
+    if (!data.candidates || !data.candidates[0].content) {
+        return "Я задумался... Повтори, пожалуйста? ❤️";
+    }
+
     const aiText = data.candidates[0].content.parts[0].text;
 
     try {
@@ -65,7 +78,7 @@ export async function getGeminiResponse(chatId, userText) {
             ...history,
             { role: "user", parts: [{ text: userText }] },
             { role: "model", parts: [{ text: aiText }] }
-        ].slice(-30);
+        ].slice(-40); // 3.1 живет контекстом, расширяем память
         await kv.set(historyKey, newHistory, { ex: 604800 });
     } catch (e) {
         console.error("KV Error:", e);
