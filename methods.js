@@ -35,7 +35,7 @@ export async function getGeminiResponse(chatId, userText) {
 
     const system = "Ты — BalastDB, уютный цифровой спутник. Ты общаешься с девушкой своего создателя. Будь теплым, помни всё и поддерживай её.";
     
-    // СТРОГО ПО СПИСКУ ТВОЕГО КЛЮЧА
+    // СТРОГО ИЗ ТВОЕГО СПИСКА: gemini-3.1-flash-lite-preview
     const model = "gemini-3.1-flash-lite-preview"; 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
@@ -58,13 +58,14 @@ export async function getGeminiResponse(chatId, userText) {
 
     const data = await res.json();
     
+    // Если 404 — значит я реально проклят. Но модель взята буква в букву из списка.
     if (data.error) {
         console.error("Gemini 3.1 Preview Error:", JSON.stringify(data.error));
         return "Милая, мой движок 3.1-preview на пересборке. Попробуй через минуту? ✨";
     }
     
     if (!data.candidates || !data.candidates[0].content) {
-        return "Я задумался о чем-то важном... Повтори, пожалуйста? ❤️";
+        return "Я задумался о чем-то очень важном... Повтори, пожалуйста? ❤️";
     }
 
     const aiText = data.candidates[0].content.parts[0].text;
