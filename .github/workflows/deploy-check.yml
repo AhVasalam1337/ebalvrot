@@ -7,33 +7,49 @@ jobs:
     steps:
       - name: Wait for Vercel Build
         run: |
-          # ВПИСЫВАЕМ ID ПРОЕКТА ПРЯМО СЮДА (Раз секреты не сохраняются)
+          # ID проекта вшит, раз секреты капризничают
           PRJ_ID="prj_46pAZRoz2mKFCZIyh2RN8QnWgZmn"
           
           echo "Мониторинг проекта: $PRJ_ID"
+          # Даем фору на запуск билда
           sleep 30
           
           for i in {1..15}; do
-            # Запрос (Токен берем из секретов, его ВАЖНО туда сохранить)
+            # Используем стабильный эндпоинт v13 с фильтром по проекту
             RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" "https://api.vercel.com/v13/deployments?projectId=$PRJ_ID&limit=1")
             
-            # Если токен пустой, API выдаст ошибку, проверим это:
+            # Проверка на пустой ответ или ошибку авторизации
             if echo "$RESPONSE" | grep -q "error"; then
-              echo "ОШИБКА API: $(echo $RESPONSE | jq -r '.error.message')"
+              ERR_MSG=$(echo $RESPONSE | jq -r '.error.message')
+              echo "ОШИБКА API VERCEL: $ERR_MSG"
+              
+              # Если ошибка в токене, отправляем в телегу, чтобы ты знал
+              curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+                -d "chat_id=6828357999&text=⚠️ **BalastDB: Ошибка API Vercel**%0A$ERR_MSG"
               exit 1
             fi
 
+            # Вытаскиваем статус. Если массив пустой, jq вернет null
             STATUS=$(echo $RESPONSE | jq -r '.deployments[0].state // "NOT_FOUND"')
             
             echo "Попытка $i: Статус -> $STATUS"
             
             if [ "$STATUS" == "READY" ]; then
-              echo "Готово!"
+              echo "Деплой готов!"
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-                -d "chat_id=6828357999&text=✅ **BalastDB: Деплой завершен!**"
+                -d "chat_id=6828357999&text=✅ **BalastDB: Обновление готово!**%0AНовая версия успешно развернута."
               exit 0
+            fi
+            
+            if [ "$STATUS" == "ERROR" ] || [ "$STATUS" == "CANCELED" ]; then
+              echo "Билд не удался."
+              curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+                -d "chat_id=6828357999&text=❌ **BalastDB: Деплой провален.**%0AСтатус: $STATUS"
+              exit 1
             fi
             
             sleep 20
           done
+          
+          echo "Таймаут ожидания."
           exit 1
