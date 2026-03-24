@@ -1,0 +1,40 @@
+name: Vercel Deploy Notify
+on: [push]
+
+jobs:
+  check-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Vercel Build
+        run: |
+          echo "Запуск мониторинга деплоя..."
+          # Даем Висцелу 20 секунд на раскачку билда
+          sleep 20
+          
+          # 15 попыток каждые 20 секунд (итого 5 минут ожидания)
+          for i in {1..15}; do
+            RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" "https://api.vercel.com/v13/deployments?projectId=${{ secrets.VERCEL_PROJECT_ID }}&limit=1")
+            STATUS=$(echo $RESPONSE | jq -r '.deployments[0].state')
+            URL=$(echo $RESPONSE | jq -r '.deployments[0].url')
+            
+            echo "Попытка $i: Статус деплоя -> $STATUS"
+            
+            if [ "$STATUS" == "READY" ]; then
+              echo "Победа! Стучим админу."
+              curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+                -d "chat_id=6828357999&text=✅ **BalastDB: Обновление готово!**%0A%0AВерсия успешно развернута на Vercel.%0A🌐 URL: https://$URL&parse_mode=Markdown"
+              exit 0
+            fi
+            
+            if [ "$STATUS" == "ERROR" ]; then
+              echo "Билд сдох."
+              curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+                -d "chat_id=6828357999&text=❌ **BalastDB: Ошибка билда!**%0A%0AПроверь логи в панели Vercel."
+              exit 1
+            fi
+            
+            sleep 20
+          done
+          
+          echo "Таймаут: Висцел слишком долго думает."
+          exit 1
