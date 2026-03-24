@@ -20,7 +20,6 @@ export const settingsMarkup = {
     }
 };
 
-// Меню выбора черты характера
 export function getTraitsMarkup(traits) {
     return {
         reply_markup: {
@@ -28,13 +27,12 @@ export function getTraitsMarkup(traits) {
                 [{ text: `📏 Лаконичность: ${traits.brevity || 5}`, callback_data: "trait_edit:brevity" }],
                 [{ text: `❤️ Эмпатия: ${traits.empathy || 5}`, callback_data: "trait_edit:empathy" }],
                 [{ text: `👤 Человечность: ${traits.humanity || 5}`, callback_data: "trait_edit:humanity" }],
-                [{ text: "⬅️ Назад", callback_data: "manage_rules" }] // Вернем в правила или настройки
+                [{ text: "⬅️ Назад", callback_data: "close_settings" }]
             ]
         }
     };
 }
 
-// Кнопки для изменения значения (1-10)
 export function getTraitLevelMarkup(traitName) {
     const levels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     const buttons = [];
