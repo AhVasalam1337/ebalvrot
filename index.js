@@ -2,14 +2,13 @@ import { kv } from '@vercel/kv';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import fetch from 'node-fetch';
 
-// Инициализируем Gemini с явным указанием актуальной модели
+// Явно указываем версию API 'v1', чтобы избежать 404 ошибки беты
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ 
-  model: "gemini-1.5-flash" 
-});
+  model: "gemini-1.5-flash"
+}, { apiVersion: 'v1' }); 
 
 export default async function handler(req, res) {
-  // Для проверки из браузера
   if (req.method !== 'POST') {
     return res.status(200).send('BalastDB Online and Ready');
   }
@@ -24,7 +23,7 @@ export default async function handler(req, res) {
     const chatId = body.message.chat.id;
     const userText = body.message.text;
 
-    // 1. Извлекаем историю из BalastDB
+    // 1. Работа с BalastDB
     const historyKey = `chat:${chatId}`;
     let history = [];
     try {
@@ -33,23 +32,20 @@ export default async function handler(req, res) {
       console.error("Ошибка BalastDB:", dbErr.message);
     }
 
-    // 2. Настраиваем чат с системной инструкцией
+    // 2. Инициализация чата
     const chat = model.startChat({
       history: history.map(item => ({
         role: item.role,
         parts: item.parts
-      })).slice(-14),
-      generationConfig: {
-        maxOutputTokens: 1000,
-      }
+      })).slice(-14)
     });
 
-    // 3. Отправляем запрос в Gemini
+    // 3. Запрос к Gemini
     const result = await chat.sendMessage(userText);
     const response = await result.response;
     const aiResponse = response.text();
 
-    // 4. Обновляем BalastDB (User + AI)
+    // 4. Обновляем BalastDB
     const updatedHistory = [
       ...history,
       { role: "user", parts: [{ text: userText }] },
@@ -58,7 +54,7 @@ export default async function handler(req, res) {
 
     await kv.set(historyKey, updatedHistory, { ex: 604800 });
 
-    // 5. Отправка в Telegram
+    // 5. Ответ в Телегач
     await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -78,7 +74,7 @@ export default async function handler(req, res) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
-          text: `⚠️ Ошибка API: ${error.message}. Проверь, что в Vercel стоит актуальный GEMINI_API_KEY.`
+          text: `⚠️ Ошибка: ${error.message}`
         })
       });
     }
