@@ -26,7 +26,6 @@ export async function editTg(chatId, messageId, text, extra = {}) {
     });
 }
 
-// РАБОТА С ДИАЛОГАМИ И ЛОКАЛЬНЫМИ ПРАВИЛАМИ
 export async function getDialogs(chatId) {
     const key = `user_chats:${chatId}`;
     let dialogs = await kv.get(key);
@@ -52,10 +51,17 @@ export async function updateActiveChatData(chatId, updateFn) {
     }
 }
 
-// ПРАВИЛА ТЕПЕРЬ ВНУТРИ ОБЪЕКТА ЧАТА
 export async function getRules(chatId) {
     const active = await getActiveChat(chatId);
     return active.rules || [];
+}
+
+// НОВЫЙ ПОЛОЖНЯК: СПИСОК ПРАВИЛ
+export async function getRulesRaw(chatId) {
+    const active = await getActiveChat(chatId);
+    const rules = active.rules || [];
+    if (rules.length === 0) return "В этом чате правил нет. Чистота. ✨";
+    return `📋 *Положняк по правилам чата "${active.name}":*\n\n` + rules.map((r, i) => `${i + 1}. ${r}`).join('\n');
 }
 
 export async function addRule(chatId, rule) {
@@ -90,7 +96,6 @@ export async function createNewChat(chatId) {
     let dialogs = await getDialogs(chatId);
     dialogs.forEach(d => d.active = false);
     const newId = `chat_${Date.now()}`;
-    // Новый чат получает дефолтное правило
     dialogs.push({ id: newId, name: `Чат ${dialogs.length + 1}`, active: true, rules: ["Называть Катю — Катей."] });
     await kv.set(key, dialogs);
 }
@@ -112,20 +117,13 @@ export async function setActiveChat(chatId, targetId) {
     await kv.set(key, dialogs);
 }
 
-export async function getHistoryRaw(chatId) {
-    const active = await getActiveChat(chatId);
-    const history = await kv.get(`history:${chatId}:${active.id}`) || [];
-    return history.length === 0 ? "Чисто. 🧊" : history.map(m => `${m.role === 'user' ? '👤' : '🤖'}: ${m.parts[0].text}`).join('\n\n');
-}
-
-// GEMINI: БЕРЕТ ПРАВИЛА ИЗ ТЕКУЩЕГО ЧАТА
 export async function getGeminiResponse(chatId, userText) {
     const active = await getActiveChat(chatId);
     const historyKey = `history:${chatId}:${active.id}`;
     let history = await kv.get(historyKey) || [];
     
     const rules = active.rules || [];
-    const system = `Твои правила для этого диалога: ${rules.join(' ')}`;
+    const system = `Твои правила: ${rules.join(' ')}`;
     
     const model = "gemini-3.1-flash-lite-preview";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
