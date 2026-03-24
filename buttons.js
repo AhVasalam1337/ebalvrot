@@ -1,6 +1,5 @@
 // buttons.js
 
-// Главное меню
 export const mainKeyboard = {
     reply_markup: {
         keyboard: [
@@ -11,7 +10,6 @@ export const mainKeyboard = {
     }
 };
 
-// Меню настроек (внизу)
 export const settingsKeyboard = {
     reply_markup: {
         keyboard: [
@@ -24,7 +22,6 @@ export const settingsKeyboard = {
     }
 };
 
-// Меню выбора черты характера
 export const traitsKeyboard = {
     reply_markup: {
         keyboard: [
@@ -37,7 +34,6 @@ export const traitsKeyboard = {
     }
 };
 
-// Меню управления правилами
 export const rulesKeyboard = {
     reply_markup: {
         keyboard: [
@@ -48,7 +44,6 @@ export const rulesKeyboard = {
     }
 };
 
-// Кнопки 1-10 для уровней
 export function getLevelKeyboard() {
     return {
         reply_markup: {
