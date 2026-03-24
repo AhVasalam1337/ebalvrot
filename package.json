@@ -1,0 +1,10 @@
+{
+  "name": "ebalvrot-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@vercel/kv": "latest",
+    "@google/generative-ai": "latest",
+    "node-fetch": "latest"
+  }
+}
