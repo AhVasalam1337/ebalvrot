@@ -28,7 +28,7 @@ export default async function handler(req, res) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chat_id: MY_ADMIN_ID,
-                    text: "✅ **BalastDB: Деплой завершен.** Код обновлен, база данных на связи."
+                    text: "✅ **BalastDB: Деплой завершен.** Код обновлен, база данных на связи!"
                 })
             });
             isNewDeploy = false;
