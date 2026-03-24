@@ -5,10 +5,8 @@ import fetch from 'node-fetch';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-// Имитация печати
 export async function sendTyping(chatId) {
-    const url = `https://api.telegram.org/bot${TG_TOKEN}/sendChatAction`;
-    return await fetch(url, {
+    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendChatAction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, action: "typing" })
@@ -16,32 +14,25 @@ export async function sendTyping(chatId) {
 }
 
 export async function sendTg(chatId, text, extra = {}) {
-    const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
-    return await fetch(url, {
+    return await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown", ...extra })
     });
 }
 
-export async function deleteMsg(chatId, messageId) {
-    const url = `https://api.telegram.org/bot${TG_TOKEN}/deleteMessage`;
-    return await fetch(url, {
+// Плавная замена текста сообщения вместо удаления
+export async function editTg(chatId, messageId, text, extra = {}) {
+    return await fetch(`https://api.telegram.org/bot${TG_TOKEN}/editMessageText`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, message_id: messageId })
+        body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, parse_mode: "Markdown", ...extra })
     });
 }
 
-// УПРАВЛЕНИЕ БАЗОЙ (НИЧЕГО НЕ ПРОЕБАНО)
 export async function getDialogs(chatId) {
     const key = `user_chats:${chatId}`;
-    let data = await kv.get(key);
-    if (!data) {
-        data = [{ id: 'default', name: 'Основной чат', active: true }];
-        await kv.set(key, data);
-    }
-    return data;
+    return await kv.get(key) || [{ id: 'default', name: 'Чат 1', active: true }];
 }
 
 export async function createNewChat(chatId) {
@@ -49,7 +40,7 @@ export async function createNewChat(chatId) {
     let dialogs = await getDialogs(chatId);
     dialogs.forEach(d => d.active = false);
     const newId = `chat_${Date.now()}`;
-    dialogs.push({ id: newId, name: `Диалог ${dialogs.length + 1}`, active: true });
+    dialogs.push({ id: newId, name: `Чат ${dialogs.length + 1}`, active: true });
     await kv.set(key, dialogs);
     return newId;
 }
@@ -57,7 +48,7 @@ export async function createNewChat(chatId) {
 export async function deleteChat(chatId, targetId) {
     const key = `user_chats:${chatId}`;
     let dialogs = await getDialogs(chatId);
-    if (dialogs.length <= 1) return; // Не удаляем последний чат
+    if (dialogs.length <= 1) return;
     const filtered = dialogs.filter(d => d.id !== targetId);
     if (!filtered.find(d => d.active)) filtered[0].active = true;
     await kv.set(key, filtered);
@@ -71,15 +62,21 @@ export async function setActiveChat(chatId, targetId) {
     await kv.set(key, dialogs);
 }
 
-// GEMINI 3.1 FLASH LITE PREVIEW (СОХРАНЕНО)
+// Выгрузка истории (Положняк)
+export async function getHistoryRaw(chatId) {
+    const dialogs = await getDialogs(chatId);
+    const active = dialogs.find(d => d.active) || dialogs[0];
+    const history = await kv.get(`history:${chatId}:${active.id}`) || [];
+    if (history.length === 0) return "Чисто.";
+    return history.map(m => `${m.role === 'user' ? '👤' : '🤖'}: ${m.parts[0].text}`).join('\n\n');
+}
+
 export async function getGeminiResponse(chatId, userText) {
     const dialogs = await getDialogs(chatId);
-    const activeChat = dialogs.find(d => d.active) || dialogs[0];
-    const historyKey = `history:${chatId}:${activeChat.id}`;
-
+    const active = dialogs.find(d => d.active) || dialogs[0];
+    const historyKey = `history:${chatId}:${active.id}`;
     let history = await kv.get(historyKey) || [];
 
-    // ЧИСТЫЙ КОНТЕКСТ
     const system = "Тебя зовут Катя. Общайся свободно.";
     const model = "gemini-3.1-flash-lite-preview";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
@@ -93,9 +90,8 @@ export async function getGeminiResponse(chatId, userText) {
     });
 
     const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
-
     const aiText = data.candidates[0].content.parts[0].text;
+
     history.push({ role: "user", parts: [{ text: userText }] }, { role: "model", parts: [{ text: aiText }] });
     await kv.set(historyKey, history.slice(-40), { ex: 604800 });
 
