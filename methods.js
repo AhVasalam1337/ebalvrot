@@ -21,7 +21,6 @@ export async function sendTg(chatId, text, extra = {}) {
     });
 }
 
-// Плавная замена текста сообщения вместо удаления
 export async function editTg(chatId, messageId, text, extra = {}) {
     return await fetch(`https://api.telegram.org/bot${TG_TOKEN}/editMessageText`, {
         method: 'POST',
@@ -30,9 +29,27 @@ export async function editTg(chatId, messageId, text, extra = {}) {
     });
 }
 
+// УПРАВЛЕНИЕ ДИАЛОГАМИ В BalastDB
 export async function getDialogs(chatId) {
     const key = `user_chats:${chatId}`;
     return await kv.get(key) || [{ id: 'default', name: 'Чат 1', active: true }];
+}
+
+export async function renameChat(chatId, newName) {
+    const key = `user_chats:${chatId}`;
+    let dialogs = await getDialogs(chatId);
+    const active = dialogs.find(d => d.active);
+    if (active) active.name = newName.substring(0, 20); // Ограничим длину
+    await kv.set(key, dialogs);
+}
+
+// Режим ожидания ввода имени
+export async function setWaitingState(chatId, state) {
+    await kv.set(`wait:${chatId}`, state, { ex: 300 }); // Ждем 5 минут
+}
+
+export async function getWaitingState(chatId) {
+    return await kv.get(`wait:${chatId}`);
 }
 
 export async function createNewChat(chatId) {
@@ -62,12 +79,11 @@ export async function setActiveChat(chatId, targetId) {
     await kv.set(key, dialogs);
 }
 
-// Выгрузка истории (Положняк)
 export async function getHistoryRaw(chatId) {
     const dialogs = await getDialogs(chatId);
     const active = dialogs.find(d => d.active) || dialogs[0];
     const history = await kv.get(`history:${chatId}:${active.id}`) || [];
-    if (history.length === 0) return "Чисто.";
+    if (history.length === 0) return "Чисто. 🧊";
     return history.map(m => `${m.role === 'user' ? '👤' : '🤖'}: ${m.parts[0].text}`).join('\n\n');
 }
 
