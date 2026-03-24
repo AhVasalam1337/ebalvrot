@@ -30,7 +30,11 @@ export async function getDialogs(chatId) {
     const key = `user_chats:${chatId}`;
     let dialogs = await kv.get(key);
     if (!dialogs) {
-        dialogs = [{ id: 'default', name: 'Чат 1', active: true, rules: ["Называть Катю — Катей."] }];
+        dialogs = [{ 
+            id: 'default', name: 'Чат 1', active: true, 
+            rules: ["Называть Катю — Катей."],
+            traits: { brevity: 5, empathy: 5, humanity: 5 }
+        }];
         await kv.set(key, dialogs);
     }
     return dialogs;
@@ -51,17 +55,21 @@ export async function updateActiveChatData(chatId, updateFn) {
     }
 }
 
-export async function getRules(chatId) {
-    const active = await getActiveChat(chatId);
-    return active.rules || [];
+// РАБОТА С ПАРАМЕТРАМИ ХАРАКТЕРА
+export async function setTrait(chatId, traitName, level) {
+    await updateActiveChatData(chatId, (chat) => {
+        if (!chat.traits) chat.traits = { brevity: 5, empathy: 5, humanity: 5 };
+        chat.traits[traitName] = parseInt(level);
+    });
 }
 
-// НОВЫЙ ПОЛОЖНЯК: СПИСОК ПРАВИЛ
 export async function getRulesRaw(chatId) {
     const active = await getActiveChat(chatId);
     const rules = active.rules || [];
-    if (rules.length === 0) return "В этом чате правил нет. Чистота. ✨";
-    return `📋 *Положняк по правилам чата "${active.name}":*\n\n` + rules.map((r, i) => `${i + 1}. ${r}`).join('\n');
+    const t = active.traits || { brevity: 5, empathy: 5, humanity: 5 };
+    let msg = `📋 *Положняк чата "${active.name}":*\n\n*Правила:*\n` + rules.map((r, i) => `${i + 1}. ${r}`).join('\n');
+    msg += `\n\n*Характер:*\n📏 Лак: ${t.brevity} | ❤️ Эмп: ${t.empathy} | 👤 Чел: ${t.humanity}`;
+    return msg;
 }
 
 export async function addRule(chatId, rule) {
@@ -96,7 +104,11 @@ export async function createNewChat(chatId) {
     let dialogs = await getDialogs(chatId);
     dialogs.forEach(d => d.active = false);
     const newId = `chat_${Date.now()}`;
-    dialogs.push({ id: newId, name: `Чат ${dialogs.length + 1}`, active: true, rules: ["Называть Катю — Катей."] });
+    dialogs.push({ 
+        id: newId, name: `Чат ${dialogs.length + 1}`, active: true, 
+        rules: ["Называть Катю — Катей."],
+        traits: { brevity: 5, empathy: 5, humanity: 5 }
+    });
     await kv.set(key, dialogs);
 }
 
@@ -117,14 +129,24 @@ export async function setActiveChat(chatId, targetId) {
     await kv.set(key, dialogs);
 }
 
+// GEMINI С ГИБКИМ ХАРАКТЕРОМ
 export async function getGeminiResponse(chatId, userText) {
     const active = await getActiveChat(chatId);
     const historyKey = `history:${chatId}:${active.id}`;
     let history = await kv.get(historyKey) || [];
     
     const rules = active.rules || [];
-    const system = `Твои правила: ${rules.join(' ')}`;
+    const t = active.traits || { brevity: 5, empathy: 5, humanity: 5 };
+
+    // ЮВЕЛИРНАЯ ИНСТРУКЦИЯ ХАРАКТЕРА
+    const traitInstructions = [
+        `Твои правила: ${rules.join(' ')}`,
+        `Уровень лаконичности: ${t.brevity}/10 (1-кратко, 10-развернуто).`,
+        `Уровень эмпатии: ${t.empathy}/10 (при 10 ты боготворишь собеседника, его благополучие — всё для тебя).`,
+        `Уровень человечности: ${t.humanity}/10 (насколько ты кажешься живым человеком, а не программой).`
+    ];
     
+    const system = traitInstructions.join('. ');
     const model = "gemini-3.1-flash-lite-preview";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
