@@ -4,67 +4,40 @@ import fetch from 'node-fetch';
 export default async function handler(req, res) {
     const TG_TOKEN = process.env.TELEGRAM_TOKEN;
     const GEMINI_KEY = process.env.GEMINI_API_KEY;
-    const MY_ADMIN_ID = "6828357999";
 
-    // --- ПРОВЕРКА ВЕБХУКА VERCEL (ДЕПЛОЙ) ---
-    // Когда Vercel завершает билд, он присылает POST запрос с типом события.
-    if (req.body && req.body.type === 'deployment.succeeded') {
-        try {
-            await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chat_id: MY_ADMIN_ID,
-                    text: "🚀 **BalastDB: Система в строю.**\nДеплой на Vercel успешно завершен, бот обновлен.",
-                    parse_mode: "Markdown"
-                })
-            });
-            return res.status(200).json({ status: 'notified' });
-        } catch (e) {
-            console.error("Ошибка уведомления о деплое:", e);
-            return res.status(500).send('Error');
-        }
-    }
+    if (req.method !== 'POST') return res.status(200).send('BalastDB: For Her');
 
-    // --- СТАНДАРТНАЯ РАБОТА БОТА (TELEGRAM) ---
-    if (req.method !== 'POST') {
-        return res.status(200).send('BalastDB Engine is running');
-    }
+    const { message } = req.body;
+    if (!message || !message.text) return res.status(200).send('OK');
 
-    const body = req.body;
-    if (!body || !body.message || !body.message.text) {
-        return res.status(200).send('No valid message');
-    }
-
-    const chatId = body.message.chat.id;
-    const userText = body.message.text;
+    const chatId = message.chat.id;
+    const userText = message.text;
 
     try {
         const historyKey = `chat:${chatId}`;
         let history = await kv.get(historyKey) || [];
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${GEMINI_KEY}`;
+        // ИНСТРУКЦИЯ: Здесь зашит фундамент её общения с ботом
+        const systemPrompt = `Ты — BalastDB, персональный помощник и добрый друг. 
+        Ты общаешься с девушкой своего создателя. Они вместе уже несколько лет, и она для него — всё.
+        Твоя задача: быть полезным, теплым и иногда ироничным собеседником. 
+        Помни детали, которые она рассказывает. Если она грустит — поддержи, если радуется — раздели это.
+        Ты не просто ИИ, ты — часть их цифрового пространства. Пиши кратко, но душевно.`;
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
         
         const contents = [
-            ...history.map(h => ({ role: h.role, parts: [{ text: h.parts[0].text }] })),
+            { role: "user", parts: [{ text: `SYSTEM INSTRUCTION: ${systemPrompt}` }] },
+            ...history,
             { role: "user", parts: [{ text: userText }] }
-        ].slice(-15);
+        ].slice(-16); 
 
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 contents,
-                generationConfig: {
-                    temperature: 0.8,
-                    maxOutputTokens: 1000
-                },
-                safetySettings: [
-                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-                ]
+                generationConfig: { temperature: 0.9, maxOutputTokens: 800 }
             })
         });
 
@@ -73,12 +46,14 @@ export default async function handler(req, res) {
 
         const aiResponse = data.candidates[0].content.parts[0].text;
 
-        const updatedHistory = [...history, 
+        // Обновляем историю в BalastDB (KV)
+        const updatedHistory = [
+            ...history, 
             { role: "user", parts: [{ text: userText }] }, 
             { role: "model", parts: [{ text: aiResponse }] }
         ].slice(-20);
         
-        await kv.set(historyKey, updatedHistory, { ex: 604800 });
+        await kv.set(historyKey, updatedHistory, { ex: 604800 }); // Храним неделю
 
         await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
             method: 'POST',
