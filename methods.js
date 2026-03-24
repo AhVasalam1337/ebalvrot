@@ -35,12 +35,9 @@ export async function getGeminiResponse(chatId, userText) {
 
     const system = "Ты — BalastDB, уютный ИИ. Ты общаешься с девушкой своего создателя. Будь теплым, помни всё и поддерживай её.";
     
-    // ВНИМАНИЕ: Для 3.1 Flash Lite сейчас актуален v1alpha или v1beta с полным именем
-    const model = "gemini-1.5-flash"; // Брат, если 3.1 всё еще плюет 404, это временный костыль, но давай попробуем еще раз 3.1
-    const model31 = "gemini-1.5-flash"; // Замени на gemini-3.1-flash-lite, если уверен, что в твоем регионе она уже в v1beta
-
-    // Самый надежный эндпоинт, который хавает почти всё
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+    // ПЕРЕХОДИМ НА СТАБИЛЬНЫЙ v1
+    const model = "gemini-1.5-flash"; 
+    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
     const contents = [
         ...history,
@@ -55,15 +52,12 @@ export async function getGeminiResponse(chatId, userText) {
 
     const data = await res.json();
     
+    // Если и тут 404 — значит, в API ключе нет доступа к модели
     if (data.error) {
         console.error("Gemini Critical Error:", JSON.stringify(data.error));
-        return "Милая, мой движок на техобслуживании. Попробуй через минуту? ✨";
+        return "Милая, мой мозг на техобслуживании. Напиши мне чуть позже? ✨";
     }
     
-    if (!data.candidates || !data.candidates[0].content) {
-        return "Я немного задумался... Повтори, пожалуйста? ❤️";
-    }
-
     const aiText = data.candidates[0].content.parts[0].text;
 
     try {
