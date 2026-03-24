@@ -37,7 +37,7 @@ export async function getGeminiResponse(chatId, userText) {
     
     // ВОТ ОНО, РАБОЧЕЕ КОМБО ДЛЯ 3.1 FLASH LITE
     const model = "gemini-3.1-flash-lite"; 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
     const contents = [
         ...history,
