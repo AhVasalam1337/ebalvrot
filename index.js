@@ -1,36 +1,50 @@
 import { kv } from '@vercel/kv';
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import fetch from 'node-fetch';
 
-// Используем именно тот ключ, который ты проверил
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// Возвращаемся к v1beta, раз она выдала тебе "Всё ок"
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }, { apiVersion: "v1beta" });
-
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(200).send('BalastDB Online');
+  // Статус для проверки из браузера
+  if (req.method !== 'POST') {
+    return res.status(200).send('BalastDB System: Direct Connection Ready');
+  }
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    if (!body?.message?.text) return res.status(200).send('OK');
+    if (!body || !body.message || !body.message.text) return res.status(200).send('OK');
 
     const chatId = body.message.chat.id;
     const userText = body.message.text;
 
+    // 1. Берем историю из BalastDB
     const historyKey = `chat:${chatId}`;
     let history = await kv.get(historyKey) || [];
 
-    const chat = model.startChat({
-      history: history.map(item => ({
-        role: item.role,
-        parts: item.parts
-      })).slice(-12)
+    // 2. Формируем запрос к Gemini напрямую по URL
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+    
+    // Преобразуем историю BalastDB в формат Google
+    const contents = [
+      ...history.map(h => ({
+        role: h.role === 'model' ? 'model' : 'user',
+        parts: [{ text: h.parts[0].text }]
+      })),
+      { role: "user", parts: [{ text: userText }] }
+    ].slice(-16); // Берем последние 16 сообщений
+
+    const response = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents })
     });
 
-    const result = await chat.sendMessage(userText);
-    const response = await result.response;
-    const aiResponse = response.text();
+    const data = await response.json();
 
+    if (data.error) {
+      throw new Error(`Gemini Error: ${data.error.message}`);
+    }
+
+    const aiResponse = data.candidates[0].content.parts[0].text;
+
+    // 3. Сохраняем в BalastDB
     const updatedHistory = [
       ...history,
       { role: "user", parts: [{ text: userText }] },
@@ -39,6 +53,7 @@ export default async function handler(req, res) {
 
     await kv.set(historyKey, updatedHistory, { ex: 604800 });
 
+    // 4. Отправляем в Телеграм
     await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -50,15 +65,19 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error("Ошибка:", error);
+    console.error("Критическая ошибка:", error.message);
     const chatId = req.body?.message?.chat?.id;
     if (chatId) {
       await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: `⚠️ Ошибка: ${error.message}` })
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `⚠️ Прямой вызов упал: ${error.message}`
+        })
       });
     }
   }
+
   return res.status(200).send('OK');
 }
