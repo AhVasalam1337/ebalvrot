@@ -2,7 +2,7 @@ import { kv } from '@vercel/kv';
 import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(200).send('BalastDB: Debug Mode Active');
+  if (req.method !== 'POST') return res.status(200).send('BalastDB: 3.1 Lite Engine');
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
   const chatId = body?.message?.chat?.id;
@@ -10,23 +10,16 @@ export default async function handler(req, res) {
 
   if (!chatId || !userText) return res.status(200).send('OK');
 
-  let currentStep = "Инициализация";
+  let currentStep = "Подготовка";
 
   try {
-    // ЛОВУШКА 1: BalastDB
-    currentStep = "Чтение из BalastDB";
+    currentStep = "Чтение истории";
     const historyKey = `chat:${chatId}`;
-    let history = [];
-    try {
-      history = await kv.get(historyKey) || [];
-    } catch (dbError) {
-      console.error("DB Error:", dbError);
-      // Не роняем всё, если база легла, просто идем без истории
-    }
+    let history = await kv.get(historyKey) || [];
 
-    // ЛОВУШКА 2: Подготовка запроса к Gemini
-    currentStep = "Запрос к Gemini 2.0-flash-lite";
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`;
+    // Используем найденную тобой модель Gemini 3.1 Flash Lite
+    currentStep = "Запрос к Gemini 3.1 Flash Lite";
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${process.env.GEMINI_API_KEY}`;
     
     const contents = [
       ...history.map(h => ({
@@ -34,78 +27,72 @@ export default async function handler(req, res) {
         parts: [{ text: h.parts[0].text }]
       })),
       { role: "user", parts: [{ text: userText }] }
-    ].slice(-10);
+    ].slice(-14); // Оптимально для 250K TPM
 
-    const geminiResponse = await fetch(geminiUrl, {
+    const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         contents,
-        generationConfig: { temperature: 0.7, maxOutputTokens: 2000 }
+        generationConfig: { 
+            temperature: 0.75, 
+            maxOutputTokens: 2000,
+            topP: 0.95
+        },
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
       })
     });
 
-    // ЛОВУШКА 3: Парсинг ответа Gemini
-    currentStep = "Парсинг ответа Gemini";
-    const data = await geminiResponse.json();
+    const data = await response.json();
 
     if (data.error) {
-      throw new Error(`Google API Error: ${data.error.message} (Code: ${data.error.code})`);
+      // Если лимит 429 всё же прилетел, выдаем красивый ответ
+      if (data.error.code === 429) {
+          throw new Error("🚀 Слишком быстро строчишь! Подожди 10 секунд и попробуй снова.");
+      }
+      throw new Error(data.error.message);
     }
 
-    if (!data.candidates || data.candidates.length === 0 || !data.candidates[0].content) {
-      // Проверяем причину блокировки (Safety)
-      const safetyReason = data.promptFeedback?.blockReason || "Неизвестная блокировка";
-      throw new Error(`Gemini ничего не выдал. Причина: ${safetyReason}`);
-    }
+    const aiResponse = data.candidates[0].content.parts[0].text;
 
-    let aiResponse = data.candidates[0].content.parts[0].text;
-
-    // ЛОВУШКА 4: Сохранение в базу
-    currentStep = "Сохранение в BalastDB";
+    currentStep = "Обновление базы";
     const updatedHistory = [
       ...history,
       { role: "user", parts: [{ text: userText }] },
       { role: "model", parts: [{ text: aiResponse }] }
     ].slice(-20);
     
-    kv.set(historyKey, updatedHistory, { ex: 604800 }).catch(e => console.error("KV Set Error:", e));
+    kv.set(historyKey, updatedHistory, { ex: 604800 }).catch(e => console.error(e));
 
-    // ЛОВУШКА 5: Отправка в Telegram
-    currentStep = "Отправка в Telegram";
-    const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendMessage`;
-    
-    const tgRes = await fetch(telegramUrl, {
+    currentStep = "Отправка в ТГ";
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: aiResponse.substring(0, 4000), // Страховка от лимита ТГ
+        text: aiResponse.substring(0, 4000),
         parse_mode: "Markdown"
       })
     });
 
-    if (!tgRes.ok) {
-      const tgErr = await tgRes.json();
-      throw new Error(`Telegram API Error: ${tgErr.description}`);
-    }
-
   } catch (error) {
-    console.error(`Ошибка на этапе [${currentStep}]:`, error.message);
-    
-    // Отправляем отчет об ошибке прямо в ТГ пользователю
-    try {
+    console.error(`Ошибка [${currentStep}]:`, error.message);
+    const chatId = req.body?.message?.chat?.id;
+    if (chatId) {
       await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
-          text: `❌ Сбой на этапе: *${currentStep}*\n\nСообщение: \`${error.message}\``,
+          text: `⚠️ *BalastDB:* ${error.message}`,
           parse_mode: "Markdown"
         })
       });
-    } catch (e) {
-      console.error("Не удалось отправить отчет об ошибке в ТГ");
     }
   }
 
