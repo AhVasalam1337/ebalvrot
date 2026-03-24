@@ -2,5 +2,10 @@
   "version": 2,
   "rewrites": [
     { "source": "/api/bot", "destination": "/api/bot.py" }
-  ]
+  ],
+  "functions": {
+    "api/bot.py": {
+      "runtime": "vercel-python@0.1.1"
+    }
+  }
 }
