@@ -22,33 +22,32 @@ export default async function handler(req, res) {
         }
         else if (data === 'rename_start') {
             await setWaitingState(chatId, 'await_rename');
-            await editTg(chatId, msgId, "Напиши новое название чата:");
+            await editTg(chatId, msgId, "📝 Новое название чата:");
         }
         else if (data === 'manage_delete') {
             const dialogs = await getDialogs(chatId);
-            await editTg(chatId, msgId, "Выбери диалог для удаления 🗑:", getDeleteMarkup(dialogs));
+            await editTg(chatId, msgId, "🗑 Удалить:", getDeleteMarkup(dialogs));
         }
         else if (data.startsWith('delete_confirm:')) {
             await deleteChat(chatId, data.split(':')[1]);
-            await editTg(chatId, msgId, "🗑 Удалено.");
+            await editTg(chatId, msgId, "🗑 Готово.");
         }
-        // ЛОГИКА ПРАВИЛ
         else if (data === 'manage_rules') {
             const rules = await getRules(chatId);
-            await editTg(chatId, msgId, `📜 Текущие правила:\n\n${rules.map((r, i) => `${i+1}. ${r}`).join('\n')}`, rulesControlMarkup);
+            await editTg(chatId, msgId, `📜 Правила ЭТОГО чата:\n\n${rules.map((r, i) => `${i+1}. ${r}`).join('\n')}`, rulesControlMarkup);
         }
         else if (data === 'rule_add_start') {
             await setWaitingState(chatId, 'await_rule');
-            await editTg(chatId, msgId, "Напиши новое правило:");
+            await editTg(chatId, msgId, "➕ Введи правило:");
         }
         else if (data === 'rule_manage_delete') {
             const rules = await getRules(chatId);
-            await editTg(chatId, msgId, "Выбери правило для удаления:", getRulesDeleteMarkup(rules));
+            await editTg(chatId, msgId, "🗑 Удалить правило:", getRulesDeleteMarkup(rules));
         }
         else if (data.startsWith('rule_delete_confirm:')) {
             await deleteRule(chatId, parseInt(data.split(':')[1]));
             const rules = await getRules(chatId);
-            await editTg(chatId, msgId, `🗑 Удалила. Текущие правила:\n\n${rules.map((r, i) => `${i+1}. ${r}`).join('\n')}`, rulesControlMarkup);
+            await editTg(chatId, msgId, `📜 Обновлено:\n\n${rules.map((r, i) => `${i+1}. ${r}`).join('\n')}`, rulesControlMarkup);
         }
         else if (data === 'get_context') {
             const report = await getHistoryRaw(chatId);
@@ -70,13 +69,13 @@ export default async function handler(req, res) {
     if (waitState === 'await_rename') {
         await renameChat(chatId, text);
         await setWaitingState(chatId, null);
-        await sendTg(chatId, `📝 Название: ${text}`, mainKeyboard);
+        await sendTg(chatId, `✅ Название сохранено.`, mainKeyboard);
         return res.status(200).send('OK');
     }
     if (waitState === 'await_rule') {
         await addRule(chatId, text);
         await setWaitingState(chatId, null);
-        await sendTg(chatId, `📜 Правило добавлено: ${text}`, mainKeyboard);
+        await sendTg(chatId, `📜 Правило добавлено в этот чат.`, mainKeyboard);
         return res.status(200).send('OK');
     }
 
@@ -86,10 +85,10 @@ export default async function handler(req, res) {
         } 
         else if (text === '💬 Диалоги') {
             const dialogs = await getDialogs(chatId);
-            await sendTg(chatId, "Твои диалоги 💬:", getDialogsMarkup(dialogs));
+            await sendTg(chatId, "Чат: 💬", getDialogsMarkup(dialogs));
         } 
         else if (text === '⚙️ Настройки') {
-            await sendTg(chatId, "Настройки ⚙️:", settingsMarkup);
+            await sendTg(chatId, "Настройки: ⚙️", settingsMarkup);
         }
         else {
             await sendTyping(chatId);
@@ -99,6 +98,5 @@ export default async function handler(req, res) {
     } catch (e) {
         console.error(e);
     }
-
     return res.status(200).send('OK');
 }
