@@ -7,79 +7,74 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
 export async function sendTg(chatId, text, extra = {}) {
     const url = `https://api.telegram.org/bot${TG_TOKEN}/sendMessage`;
-    try {
-        await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text: text,
-                parse_mode: "Markdown",
-                ...extra
-            })
-        });
-    } catch (e) {
-        console.error("ТГ упал:", e);
-    }
+    return await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown", ...extra })
+    });
 }
 
-export async function getGeminiResponse(chatId, userText) {
-    const historyKey = `chat:${chatId}`;
-    let history = [];
-
-    try {
-        history = await kv.get(historyKey) || [];
-    } catch (e) {
-        console.error("BalastDB Error:", e);
+// Получаем список диалогов пользователя
+export async function getDialogs(chatId) {
+    const key = `user_chats:${chatId}`;
+    let data = await kv.get(key);
+    if (!data) {
+        // Если пусто, создаем первый дефолтный чат
+        data = [{ id: 'default', name: 'Основной чат', active: true }];
+        await kv.set(key, data);
     }
+    return data;
+}
 
-    const system = "Ты — BalastDB, уютный цифровой спутник. Ты общаешься с девушкой своего создателя. Будь теплым, помни всё и поддерживай её.";
+// Создаем новый чат
+export async function createNewChat(chatId) {
+    const key = `user_chats:${chatId}`;
+    let dialogs = await getDialogs(chatId);
     
-    // СТРОГО ИЗ ТВОЕГО СПИСКА: gemini-3.1-flash-lite-preview
-    const model = "gemini-3.1-flash-lite-preview"; 
+    // Снимаем активность со всех
+    dialogs.forEach(d => d.active = false);
+    
+    const newId = `chat_${Date.now()}`;
+    dialogs.push({ id: newId, name: `Диалог ${dialogs.length + 1}`, active: true });
+    
+    await kv.set(key, dialogs);
+    return newId;
+}
+
+// Переключаем активный чат
+export async function setActiveChat(chatId, targetId) {
+    const key = `user_chats:${chatId}`;
+    let dialogs = await getDialogs(chatId);
+    dialogs.forEach(d => d.active = (d.id === targetId));
+    await kv.set(key, dialogs);
+}
+
+// Ответ от Gemini (теперь берет историю из активного чата)
+export async function getGeminiResponse(chatId, userText) {
+    const dialogs = await getDialogs(chatId);
+    const activeChat = dialogs.find(d => d.active) || dialogs[0];
+    const historyKey = `history:${chatId}:${activeChat.id}`;
+
+    let history = await kv.get(historyKey) || [];
+
+    const system = "Ты — BalastDB, уютный ИИ. Ты общаешься с девушкой своего создателя. Твоя память ограничена этим конкретным диалогом.";
+    const model = "gemini-3.1-flash-lite-preview";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
-    const contents = [
-        ...history,
-        { role: "user", parts: [{ text: `[SYSTEM: ${system}] ${userText}` }] }
-    ].slice(-24);
+    const contents = [...history, { role: "user", parts: [{ text: `[SYSTEM: ${system}] ${userText}` }] }].slice(-24);
 
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            contents,
-            generationConfig: {
-                temperature: 0.9,
-                maxOutputTokens: 2048
-            }
-        })
+        body: JSON.stringify({ contents })
     });
 
     const data = await res.json();
-    
-    // Если 404 — значит я реально проклят. Но модель взята буква в букву из списка.
-    if (data.error) {
-        console.error("Gemini 3.1 Preview Error:", JSON.stringify(data.error));
-        return "Милая, мой движок 3.1-preview на пересборке. Попробуй через минуту? ✨";
-    }
-    
-    if (!data.candidates || !data.candidates[0].content) {
-        return "Я задумался о чем-то очень важном... Повтори, пожалуйста? ❤️";
-    }
+    if (data.error) return "Ой, что-то в движке 3.1 хрустнуло. Попробуй еще раз? ✨";
 
     const aiText = data.candidates[0].content.parts[0].text;
-
-    try {
-        const newHistory = [
-            ...history,
-            { role: "user", parts: [{ text: userText }] },
-            { role: "model", parts: [{ text: aiText }] }
-        ].slice(-40); 
-        await kv.set(historyKey, newHistory, { ex: 604800 });
-    } catch (e) {
-        console.error("KV Error:", e);
-    }
+    history.push({ role: "user", parts: [{ text: userText }] }, { role: "model", parts: [{ text: aiText }] });
+    await kv.set(historyKey, history.slice(-40), { ex: 604800 });
 
     return aiText;
 }
