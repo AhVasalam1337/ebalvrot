@@ -1,6 +1,6 @@
 // index.js
-import { sendTg, sendTyping, editTg, getGeminiResponse, getDialogs, createNewChat, setActiveChat, deleteChat, getHistoryRaw, setWaitingState, getWaitingState, renameChat } from './methods.js';
-import { mainKeyboard, getDialogsMarkup, settingsMarkup, getDeleteMarkup } from './buttons.js';
+import { sendTg, sendTyping, editTg, getGeminiResponse, getDialogs, createNewChat, setActiveChat, deleteChat, getHistoryRaw, setWaitingState, getWaitingState, renameChat, getRules, addRule, deleteRule } from './methods.js';
+import { mainKeyboard, getDialogsMarkup, settingsMarkup, getDeleteMarkup, rulesControlMarkup, getRulesDeleteMarkup } from './buttons.js';
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(200).send('OK');
@@ -17,22 +17,38 @@ export default async function handler(req, res) {
             await sendTg(chatId, aiText, mainKeyboard);
         } 
         else if (data.startsWith('select_chat:')) {
-            const targetId = data.split(':')[1];
-            await setActiveChat(chatId, targetId);
+            await setActiveChat(chatId, data.split(':')[1]);
             await editTg(chatId, msgId, "✅"); 
         }
         else if (data === 'rename_start') {
             await setWaitingState(chatId, 'await_rename');
-            await editTg(chatId, msgId, "Напиши новое название для этого чата:");
+            await editTg(chatId, msgId, "Напиши новое название чата:");
         }
         else if (data === 'manage_delete') {
             const dialogs = await getDialogs(chatId);
             await editTg(chatId, msgId, "Выбери диалог для удаления 🗑:", getDeleteMarkup(dialogs));
         }
         else if (data.startsWith('delete_confirm:')) {
-            const targetId = data.split(':')[1];
-            await deleteChat(chatId, targetId);
+            await deleteChat(chatId, data.split(':')[1]);
             await editTg(chatId, msgId, "🗑 Удалено.");
+        }
+        // ЛОГИКА ПРАВИЛ
+        else if (data === 'manage_rules') {
+            const rules = await getRules(chatId);
+            await editTg(chatId, msgId, `📜 Текущие правила:\n\n${rules.map((r, i) => `${i+1}. ${r}`).join('\n')}`, rulesControlMarkup);
+        }
+        else if (data === 'rule_add_start') {
+            await setWaitingState(chatId, 'await_rule');
+            await editTg(chatId, msgId, "Напиши новое правило:");
+        }
+        else if (data === 'rule_manage_delete') {
+            const rules = await getRules(chatId);
+            await editTg(chatId, msgId, "Выбери правило для удаления:", getRulesDeleteMarkup(rules));
+        }
+        else if (data.startsWith('rule_delete_confirm:')) {
+            await deleteRule(chatId, parseInt(data.split(':')[1]));
+            const rules = await getRules(chatId);
+            await editTg(chatId, msgId, `🗑 Удалила. Текущие правила:\n\n${rules.map((r, i) => `${i+1}. ${r}`).join('\n')}`, rulesControlMarkup);
         }
         else if (data === 'get_context') {
             const report = await getHistoryRaw(chatId);
@@ -50,12 +66,17 @@ export default async function handler(req, res) {
     const chatId = message.chat.id;
     const text = message.text;
 
-    // Проверка режима ожидания (переименование)
     const waitState = await getWaitingState(chatId);
     if (waitState === 'await_rename') {
         await renameChat(chatId, text);
         await setWaitingState(chatId, null);
-        await sendTg(chatId, `📝 Переименовала в: ${text}`, mainKeyboard);
+        await sendTg(chatId, `📝 Название: ${text}`, mainKeyboard);
+        return res.status(200).send('OK');
+    }
+    if (waitState === 'await_rule') {
+        await addRule(chatId, text);
+        await setWaitingState(chatId, null);
+        await sendTg(chatId, `📜 Правило добавлено: ${text}`, mainKeyboard);
         return res.status(200).send('OK');
     }
 
@@ -69,9 +90,6 @@ export default async function handler(req, res) {
         } 
         else if (text === '⚙️ Настройки') {
             await sendTg(chatId, "Настройки ⚙️:", settingsMarkup);
-        }
-        else if (['📅 Планы', '🤡 Мемы'].includes(text)) {
-            await sendTg(chatId, "Скоро здесь что-то будет... ☁️", mainKeyboard);
         }
         else {
             await sendTyping(chatId);
