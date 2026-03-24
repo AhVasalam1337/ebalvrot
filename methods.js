@@ -19,7 +19,7 @@ export async function sendTg(chatId, text, extra = {}) {
             })
         });
     } catch (e) {
-        console.error("Ошибка Telegram API:", e);
+        console.error("ТГ упал:", e);
     }
 }
 
@@ -30,19 +30,19 @@ export async function getGeminiResponse(chatId, userText) {
     try {
         history = await kv.get(historyKey) || [];
     } catch (e) {
-        console.error("Ошибка BalastDB (KV):", e);
+        console.error("BalastDB Error:", e);
     }
 
-    const system = "Ты — BalastDB, уютный ИИ. Ты общаешься с девушкой своего создателя. Будь теплым, помни всё и поддерживай её.";
+    const system = "Ты — BalastDB, уютный цифровой спутник. Ты общаешься с девушкой своего создателя. Будь теплым, помни всё и поддерживай её.";
     
-    // ПЕРЕХОДИМ НА СТАБИЛЬНЫЙ v1
-    const model = "gemini-1.5-flash"; 
-    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`;
+    // ВОТ ОНО, РАБОЧЕЕ КОМБО ДЛЯ 3.1 FLASH LITE
+    const model = "gemini-3.1-flash-lite"; 
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
     const contents = [
         ...history,
         { role: "user", parts: [{ text: `[SYSTEM: ${system}] ${userText}` }] }
-    ].slice(-20);
+    ].slice(-24);
 
     const res = await fetch(url, {
         method: 'POST',
@@ -52,10 +52,10 @@ export async function getGeminiResponse(chatId, userText) {
 
     const data = await res.json();
     
-    // Если и тут 404 — значит, в API ключе нет доступа к модели
+    // Если и сейчас 404 — значит я проклят, но этот URL — каноничен для 3.1
     if (data.error) {
-        console.error("Gemini Critical Error:", JSON.stringify(data.error));
-        return "Милая, мой мозг на техобслуживании. Напиши мне чуть позже? ✨";
+        console.error("Gemini 3.1 РЕАЛЬНАЯ ОШИБКА:", JSON.stringify(data.error));
+        return "Милая, мой движок 3.1 на пересборке. Попробуй через минуту? ✨";
     }
     
     const aiText = data.candidates[0].content.parts[0].text;
@@ -68,7 +68,7 @@ export async function getGeminiResponse(chatId, userText) {
         ].slice(-30);
         await kv.set(historyKey, newHistory, { ex: 604800 });
     } catch (e) {
-        console.error("KV Save Error:", e);
+        console.error("KV Error:", e);
     }
 
     return aiText;
