@@ -5,7 +5,6 @@ import fetch from 'node-fetch';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-// Telegram API helpers
 export async function sendTyping(chatId) {
     await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendChatAction`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -27,34 +26,55 @@ export async function editTg(chatId, messageId, text, extra = {}) {
     });
 }
 
-// УПРАВЛЕНИЕ ПРАВИЛАМИ
+// РАБОТА С ДИАЛОГАМИ И ЛОКАЛЬНЫМИ ПРАВИЛАМИ
+export async function getDialogs(chatId) {
+    const key = `user_chats:${chatId}`;
+    let dialogs = await kv.get(key);
+    if (!dialogs) {
+        dialogs = [{ id: 'default', name: 'Чат 1', active: true, rules: ["Называть Катю — Катей."] }];
+        await kv.set(key, dialogs);
+    }
+    return dialogs;
+}
+
+export async function getActiveChat(chatId) {
+    const dialogs = await getDialogs(chatId);
+    return dialogs.find(d => d.active) || dialogs[0];
+}
+
+export async function updateActiveChatData(chatId, updateFn) {
+    const key = `user_chats:${chatId}`;
+    let dialogs = await getDialogs(chatId);
+    const index = dialogs.findIndex(d => d.active);
+    if (index !== -1) {
+        updateFn(dialogs[index]);
+        await kv.set(key, dialogs);
+    }
+}
+
+// ПРАВИЛА ТЕПЕРЬ ВНУТРИ ОБЪЕКТА ЧАТА
 export async function getRules(chatId) {
-    const rules = await kv.get(`rules:${chatId}`);
-    return rules || ["Называть Катю — Катей."]; // Дефолтное правило
+    const active = await getActiveChat(chatId);
+    return active.rules || [];
 }
 
 export async function addRule(chatId, rule) {
-    const rules = await getRules(chatId);
-    rules.push(rule);
-    await kv.set(`rules:${chatId}`, rules);
+    await updateActiveChatData(chatId, (chat) => {
+        if (!chat.rules) chat.rules = [];
+        chat.rules.push(rule);
+    });
 }
 
-export async function deleteRule(chatId, index) {
-    let rules = await getRules(chatId);
-    rules.splice(index, 1);
-    await kv.set(`rules:${chatId}`, rules);
-}
-
-// УПРАВЛЕНИЕ ДИАЛОГАМИ
-export async function getDialogs(chatId) {
-    return await kv.get(`user_chats:${chatId}`) || [{ id: 'default', name: 'Чат 1', active: true }];
+export async function deleteRule(chatId, ruleIndex) {
+    await updateActiveChatData(chatId, (chat) => {
+        if (chat.rules) chat.rules.splice(ruleIndex, 1);
+    });
 }
 
 export async function renameChat(chatId, newName) {
-    let dialogs = await getDialogs(chatId);
-    const active = dialogs.find(d => d.active);
-    if (active) active.name = newName.substring(0, 20);
-    await kv.set(`user_chats:${chatId}`, dialogs);
+    await updateActiveChatData(chatId, (chat) => {
+        chat.name = newName.substring(0, 20);
+    });
 }
 
 export async function setWaitingState(chatId, state) {
@@ -66,45 +86,46 @@ export async function getWaitingState(chatId) {
 }
 
 export async function createNewChat(chatId) {
+    const key = `user_chats:${chatId}`;
     let dialogs = await getDialogs(chatId);
     dialogs.forEach(d => d.active = false);
     const newId = `chat_${Date.now()}`;
-    dialogs.push({ id: newId, name: `Чат ${dialogs.length + 1}`, active: true });
-    await kv.set(`user_chats:${chatId}`, dialogs);
+    // Новый чат получает дефолтное правило
+    dialogs.push({ id: newId, name: `Чат ${dialogs.length + 1}`, active: true, rules: ["Называть Катю — Катей."] });
+    await kv.set(key, dialogs);
 }
 
 export async function deleteChat(chatId, targetId) {
+    const key = `user_chats:${chatId}`;
     let dialogs = await getDialogs(chatId);
     if (dialogs.length <= 1) return;
     const filtered = dialogs.filter(d => d.id !== targetId);
     if (!filtered.find(d => d.active)) filtered[0].active = true;
-    await kv.set(`user_chats:${chatId}`, filtered);
+    await kv.set(key, filtered);
     await kv.del(`history:${chatId}:${targetId}`);
 }
 
 export async function setActiveChat(chatId, targetId) {
+    const key = `user_chats:${chatId}`;
     let dialogs = await getDialogs(chatId);
     dialogs.forEach(d => d.active = (d.id === targetId));
-    await kv.set(`user_chats:${chatId}`, dialogs);
+    await kv.set(key, dialogs);
 }
 
 export async function getHistoryRaw(chatId) {
-    const dialogs = await getDialogs(chatId);
-    const active = dialogs.find(d => d.active) || dialogs[0];
+    const active = await getActiveChat(chatId);
     const history = await kv.get(`history:${chatId}:${active.id}`) || [];
     return history.length === 0 ? "Чисто. 🧊" : history.map(m => `${m.role === 'user' ? '👤' : '🤖'}: ${m.parts[0].text}`).join('\n\n');
 }
 
-// GEMINI RESPONSE С УЧЕТОМ ПРАВИЛ
+// GEMINI: БЕРЕТ ПРАВИЛА ИЗ ТЕКУЩЕГО ЧАТА
 export async function getGeminiResponse(chatId, userText) {
-    const dialogs = await getDialogs(chatId);
-    const active = dialogs.find(d => d.active) || dialogs[0];
+    const active = await getActiveChat(chatId);
     const historyKey = `history:${chatId}:${active.id}`;
     let history = await kv.get(historyKey) || [];
     
-    // Подтягиваем правила из БД
-    const rules = await getRules(chatId);
-    const system = `Тебя зовут Катя. Общайся свободно. Твои правила: ${rules.join(' ')}`;
+    const rules = active.rules || [];
+    const system = `Твои правила для этого диалога: ${rules.join(' ')}`;
     
     const model = "gemini-3.1-flash-lite-preview";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
