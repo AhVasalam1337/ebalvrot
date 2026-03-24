@@ -33,16 +33,16 @@ export async function getGeminiResponse(chatId, userText) {
         console.error("Ошибка BalastDB (KV):", e);
     }
 
-    const system = "Ты — BalastDB, персональный ИИ для девушки твоего создателя. Ты помнишь всё, что она говорит, поддерживаешь её и создаешь атмосферу тепла.";
+    const system = "Ты — BalastDB, уютный ИИ. Ты общаешься с девушкой своего создателя. Будь теплым, помни всё и поддерживай её.";
     
-    // ФИКС: Исправлена опечатка в v1beta и уточнена модель 3.1
-    const model = "gemini-3.1-flash-lite-001"; 
+    // ВОЗВРАЩАЕМ РАБОЧУЮ МОДЕЛЬ
+    const model = "gemini-3.1-flash-lite"; 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
     const contents = [
         ...history,
         { role: "user", parts: [{ text: `[SYSTEM: ${system}] ${userText}` }] }
-    ].slice(-24);
+    ].slice(-20);
 
     const res = await fetch(url, {
         method: 'POST',
@@ -51,7 +51,6 @@ export async function getGeminiResponse(chatId, userText) {
             contents,
             generationConfig: {
                 temperature: 0.8,
-                topP: 0.95,
                 maxOutputTokens: 1024
             }
         })
@@ -59,27 +58,42 @@ export async function getGeminiResponse(chatId, userText) {
 
     const data = await res.json();
     
+    // Если 404 — значит Google требует v1 вместо v1beta для этой модели
     if (data.error) {
-        console.error("Gemini 3.1 Hard Error:", JSON.stringify(data.error));
-        return "Милая, мой движок 3.1 немного забарахлил. Попробуй еще разок? ✨";
+        console.error("Gemini Critical Error:", JSON.stringify(data.error));
+        // Пробуем запасной вариант, если v1beta капризничает
+        const altUrl = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_KEY}`;
+        const altRes = await fetch(altUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents })
+        });
+        const altData = await altRes.json();
+        
+        if (altData.candidates) {
+            const aiText = altData.candidates[0].content.parts[0].text;
+            await saveHistory(chatId, history, userText, aiText);
+            return aiText;
+        }
+        
+        return "Милая, я немного запутался в своих мыслях... Попробуй еще раз? ✨";
     }
     
-    if (!data.candidates || !data.candidates[0].content) {
-        return "Я задумался о чем-то очень важном... Повтори, пожалуйста? ❤️";
-    }
-
     const aiText = data.candidates[0].content.parts[0].text;
+    await saveHistory(chatId, history, userText, aiText);
+    return aiText;
+}
 
+// Вынес сохранение отдельно, чтобы не дублировать
+async function saveHistory(chatId, history, userText, aiText) {
     try {
         const newHistory = [
             ...history,
             { role: "user", parts: [{ text: userText }] },
             { role: "model", parts: [{ text: aiText }] }
-        ].slice(-30); // 3.1 отлично держит жирный контекст
-        await kv.set(historyKey, newHistory, { ex: 604800 });
+        ].slice(-30);
+        await kv.set(`chat:${chatId}`, newHistory, { ex: 604800 });
     } catch (e) {
-        console.error("Ошибка сохранения в KV:", e);
+        console.error("KV Save Error:", e);
     }
-
-    return aiText;
 }
