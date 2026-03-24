@@ -13,7 +13,7 @@ export const settingsMarkup = {
     reply_markup: {
         inline_keyboard: [
             [{ text: "📑 Положняк", callback_data: "get_context" }],
-            [{ text: "🗑 Удалить диалог", callback_data: "manage_delete" }],
+            [{ text: "✏️ Название", callback_data: "rename_start" }, { text: "🗑 Удалить", callback_data: "manage_delete" }],
             [{ text: "⬅️ Назад", callback_data: "close_settings" }]
         ]
     }
@@ -21,10 +21,10 @@ export const settingsMarkup = {
 
 export function getDialogsMarkup(dialogs) {
     const buttons = dialogs.map(d => ([{ 
-        text: `${d.active ? '· ' : ''}${d.name}`, 
+        text: `${d.active ? '✨ ' : ''}${d.name}`, 
         callback_data: `select_chat:${d.id}` 
     }]));
-    buttons.push([{ text: "+", callback_data: "new_chat" }]);
+    buttons.push([{ text: "➕ Новый", callback_data: "new_chat" }]);
     return { reply_markup: { inline_keyboard: buttons } };
 }
 
