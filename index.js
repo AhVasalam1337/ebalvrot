@@ -4,35 +4,36 @@ import fetch from 'node-fetch';
 export default async function handler(req, res) {
     const TG_TOKEN = process.env.TELEGRAM_TOKEN;
     const GEMINI_KEY = process.env.GEMINI_API_KEY;
-    const MY_ADMIN_ID = process.env.MY_ADMIN_ID;
+    const MY_ADMIN_ID = "6828357999";
 
-    // --- СЕРВЕРНЫЙ ЛОГ ГОТОВНОСТИ (Webhook от Vercel) ---
-    // Настрой этот путь в Vercel: https://твой-домен.vercel.app/api/ready
-    if (req.url.includes('/api/ready')) {
+    // --- ПРОВЕРКА ВЕБХУКА VERCEL (ДЕПЛОЙ) ---
+    // Когда Vercel завершает билд, он присылает POST запрос с типом события.
+    if (req.body && req.body.type === 'deployment.succeeded') {
         try {
             await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     chat_id: MY_ADMIN_ID,
-                    text: "🚀 **BalastDB: Сервер обновлен.** Билд завершен успешно, я в строю.",
+                    text: "🚀 **BalastDB: Система в строю.**\nДеплой на Vercel успешно завершен, бот обновлен.",
                     parse_mode: "Markdown"
                 })
             });
-            return res.status(200).send('Notification sent');
+            return res.status(200).json({ status: 'notified' });
         } catch (e) {
+            console.error("Ошибка уведомления о деплое:", e);
             return res.status(500).send('Error');
         }
     }
 
-    // Обработка только POST запросов от Telegram
+    // --- СТАНДАРТНАЯ РАБОТА БОТА (TELEGRAM) ---
     if (req.method !== 'POST') {
         return res.status(200).send('BalastDB Engine is running');
     }
 
     const body = req.body;
     if (!body || !body.message || !body.message.text) {
-        return res.status(200).send('No message');
+        return res.status(200).send('No valid message');
     }
 
     const chatId = body.message.chat.id;
