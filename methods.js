@@ -5,48 +5,33 @@ import fetch from 'node-fetch';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-export async function deleteTgMessage(chatId, messageId) {
-    if (!messageId) return;
-    try {
-        await fetch(`https://api.telegram.org/bot${TG_TOKEN}/deleteMessage`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, message_id: messageId })
-        });
-    } catch (e) {}
+export async function sendTyping(chatId) {
+    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendChatAction`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, action: "typing" })
+    });
 }
 
 export async function sendTg(chatId, text, extra = {}) {
-    const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+    return await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown", ...extra })
     });
-    const data = await res.json();
-    if (data.ok) {
-        const active = await getActiveChat(chatId);
-        const key = `msg_ids:${chatId}:${active.id}`;
-        let ids = await kv.get(key) || [];
-        ids.push(data.result.message_id);
-        await kv.set(key, ids.slice(-50));
-    }
-    return data;
 }
 
-export async function clearChatPhysical(chatId) {
-    const active = await getActiveChat(chatId);
-    const key = `msg_ids:${chatId}:${active.id}`;
-    const historyKey = `history:${chatId}:${active.id}`;
-    const ids = await kv.get(key) || [];
-    for (const id of ids) { await deleteTgMessage(chatId, id); }
-    await kv.del(key);
-    await kv.del(historyKey);
-    return "Память стерта, чат зачищен. 🧊";
+export async function editTg(chatId, messageId, text, extra = {}) {
+    return await fetch(`https://api.telegram.org/bot${TG_TOKEN}/editMessageText`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, parse_mode: "Markdown", ...extra })
+    });
 }
 
+// РАБОТА С ДИАЛОГАМИ И ЛОКАЛЬНЫМИ ПРАВИЛАМИ
 export async function getDialogs(chatId) {
     const key = `user_chats:${chatId}`;
     let dialogs = await kv.get(key);
     if (!dialogs) {
-        dialogs = [{ id: 'default', name: 'Чат 1', active: true, rules: [], traits: { brevity: 5, empathy: 5, humanity: 5 } }];
+        dialogs = [{ id: 'default', name: 'Чат 1', active: true, rules: ["Называть Катю — Катей."] }];
         await kv.set(key, dialogs);
     }
     return dialogs;
@@ -67,23 +52,10 @@ export async function updateActiveChatData(chatId, updateFn) {
     }
 }
 
+// ПРАВИЛА ТЕПЕРЬ ВНУТРИ ОБЪЕКТА ЧАТА
 export async function getRules(chatId) {
     const active = await getActiveChat(chatId);
     return active.rules || [];
-}
-
-export async function setTrait(chatId, traitName, level) {
-    await updateActiveChatData(chatId, (chat) => {
-        if (!chat.traits) chat.traits = { brevity: 5, empathy: 5, humanity: 5 };
-        chat.traits[traitName] = parseInt(level);
-    });
-}
-
-export async function getRulesRaw(chatId) {
-    const active = await getActiveChat(chatId);
-    const rules = active.rules || [];
-    const t = active.traits || { brevity: 5, empathy: 5, humanity: 5 };
-    return `📋 *Чат: ${active.name}*\n\n*Правила:* ${rules.length ? rules.join(', ') : "нет"}\n*Характер:* Лак ${t.brevity}, Эмп ${t.empathy}, Чел ${t.humanity}`;
 }
 
 export async function addRule(chatId, rule) {
@@ -100,7 +72,9 @@ export async function deleteRule(chatId, ruleIndex) {
 }
 
 export async function renameChat(chatId, newName) {
-    await updateActiveChatData(chatId, (chat) => { chat.name = newName.substring(0, 20); });
+    await updateActiveChatData(chatId, (chat) => {
+        chat.name = newName.substring(0, 20);
+    });
 }
 
 export async function setWaitingState(chatId, state) {
@@ -116,7 +90,8 @@ export async function createNewChat(chatId) {
     let dialogs = await getDialogs(chatId);
     dialogs.forEach(d => d.active = false);
     const newId = `chat_${Date.now()}`;
-    dialogs.push({ id: newId, name: `Чат ${dialogs.length + 1}`, active: true, rules: [], traits: { brevity: 5, empathy: 5, humanity: 5 } });
+    // Новый чат получает дефолтное правило
+    dialogs.push({ id: newId, name: `Чат ${dialogs.length + 1}`, active: true, rules: ["Называть Катю — Катей."] });
     await kv.set(key, dialogs);
 }
 
@@ -137,30 +112,35 @@ export async function setActiveChat(chatId, targetId) {
     await kv.set(key, dialogs);
 }
 
-export async function sendTyping(chatId) {
-    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendChatAction`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, action: "typing" })
-    });
+export async function getHistoryRaw(chatId) {
+    const active = await getActiveChat(chatId);
+    const history = await kv.get(`history:${chatId}:${active.id}`) || [];
+    return history.length === 0 ? "Чисто. 🧊" : history.map(m => `${m.role === 'user' ? '👤' : '🤖'}: ${m.parts[0].text}`).join('\n\n');
 }
 
+// GEMINI: БЕРЕТ ПРАВИЛА ИЗ ТЕКУЩЕГО ЧАТА
 export async function getGeminiResponse(chatId, userText) {
     const active = await getActiveChat(chatId);
     const historyKey = `history:${chatId}:${active.id}`;
     let history = await kv.get(historyKey) || [];
     
     const rules = active.rules || [];
-    const t = active.traits || { brevity: 5, empathy: 5, humanity: 5 };
-    const system = `Твои черты: лаконичность ${t.brevity}/10, эмпатия ${t.empathy}/10, человечность ${t.humanity}/10. Правила: ${rules.join('. ')}`;
+    const system = `Твои правила для этого диалога: ${rules.join(' ')}`;
     
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY}`;
-    const contents = [...history, { role: "user", parts: [{ text: `[CONTEXT: ${system}] ${userText}` }] }].slice(-20);
+    const model = "gemini-3.1-flash-lite-preview";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents }) });
+    const contents = [...history, { role: "user", parts: [{ text: `[SYSTEM: ${system}] ${userText}` }] }].slice(-24);
+
+    const res = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents })
+    });
+
     const data = await res.json();
     const aiText = data.candidates[0].content.parts[0].text;
 
     history.push({ role: "user", parts: [{ text: userText }] }, { role: "model", parts: [{ text: aiText }] });
-    await kv.set(historyKey, history.slice(-30), { ex: 604800 });
+    await kv.set(historyKey, history.slice(-40), { ex: 604800 });
     return aiText;
 }
