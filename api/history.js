@@ -1,25 +1,25 @@
-import { kv } from '@vercel/kv';
-import { getActiveChat } from '../methods.js';
+const { sql } = require('@vercel/postgres');
 
 export default async function handler(req, res) {
-    const { chatId, limit = 10, offset = 0 } = req.query;
-    if (!chatId) return res.status(400).json({ error: 'No chatId' });
+    const { chatId } = req.query;
+    if (!chatId) return res.status(400).json({ error: "Missing chatId" });
 
     try {
-        const active = await getActiveChat(chatId);
-        const historyKey = `history:${chatId}:${active.id}`;
-        const allHistory = await kv.get(historyKey) || [];
-        
-        // Переворачиваем, берем нужный кусок и переворачиваем обратно
-        const start = Math.max(0, allHistory.length - parseInt(limit) - parseInt(offset));
-        const end = Math.max(0, allHistory.length - parseInt(offset));
-        const historyPart = allHistory.slice(start, end);
-        
-        return res.status(200).json({ 
-            history: historyPart,
-            hasMore: start > 0 
-        });
-    } catch (e) {
-        return res.status(500).json({ error: e.message });
+        // Берем последние 50 сообщений
+        const { rows } = await sql`
+            SELECT role, content FROM messages 
+            WHERE chat_id = ${chatId} 
+            ORDER BY created_at ASC
+        `;
+
+        // Мапим в формат Gemini
+        const history = rows.map(row => ({
+            role: row.role,
+            parts: [{ text: row.content }]
+        }));
+
+        res.status(200).json({ history });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 }
