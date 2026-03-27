@@ -1,1 +1,195 @@
-suka
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Катя ИИ</title>
+    <link rel="manifest" href="/manifest.json">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        geminiBg: '#131314', // Тот самый темно-серый фон
+                        geminiInput: '#1e1f20', // Фон поля ввода
+                        geminiBotMsg: '#1e1f20', // Баббл Кати
+                        geminiUserMsg: '#282a2c', // Баббл твой
+                        geminiAccent: '#8ab4f8' // Голубой акцент
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body {
+            background-color: #131314;
+            color: #e3e3e3;
+            font-family: 'Google Sans', sans-serif; /* Почти Google Sans */
+            overflow: hidden; /* Убираем скролл самого body */
+        }
+        
+        /* Стилизация скроллбара (как в Android/iOS) */
+        #chat-messages::-webkit-scrollbar { width: 0; }
+        
+        /* Анимация появления сообщения */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .msg-anim { animation: fadeIn 0.3s ease-out; }
+        
+        /* Плавный автоскролл */
+        #chat-messages { scroll-behavior: smooth; }
+        
+        /* Фикс для iOS, чтобы input не ломал верстку */
+        input:focus { outline: none; }
+    </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden">
+
+    <header class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-geminiBg/80 backdrop-blur-md sticky top-0 z-50 h-[60px]">
+        <div class="flex items-center gap-2">
+            <span class="material-icons-outlined text-gray-400">menu</span>
+            <h1 class="text-xl font-medium">Катя</h1>
+            <span class="material-icons-outlined text-geminiAccent text-sm">arrow_drop_down</span>
+        </div>
+        <div class="flex items-center gap-4">
+            <span class="material-icons-outlined text-gray-400">add_comment</span>
+            <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center font-bold text-sm">P</div>
+        </div>
+    </header>
+
+    <main id="chat-messages" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 pb-[100px]">
+        
+        <div class="flex gap-3 items-start msg-anim">
+            <div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent mt-1 flex-shrink-0">✨</div>
+            <div class="bg-geminiBotMsg p-4 rounded-2xl rounded-tl-none max-w-[85%] leading-relaxed text-[15px]">
+                Привет! Я теперь и тут. Как ты?
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="p-3 pb-5 bg-geminiBg sticky bottom-0 z-40">
+        <div class="flex items-center gap-2 bg-geminiInput border border-gray-700 rounded-full px-2 py-1 shadow-inner h-[56px]">
+            
+            <button class="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-white rounded-full">
+                <span class="material-icons-outlined">add</span>
+            </button>
+            
+            <input id="userInput" type="text" placeholder="Введите запрос..." 
+                   class="flex-1 bg-transparent text-[16px] text-white px-2 placeholder:text-gray-500 focus:ring-0">
+            
+            <button id="sendBtn" class="w-10 h-10 flex items-center justify-center text-geminiAccent disabled:text-gray-600 rounded-full" disabled>
+                <span class="material-icons-outlined">send</span>
+            </button>
+            
+        </div>
+    </footer>
+
+    <script>
+        const msgDiv = document.getElementById('chat-messages');
+        const input = document.getElementById('userInput');
+        const btn = document.getElementById('sendBtn');
+        
+        // Авторизация: Берем chatId из LocalStorage (потом привяжем к Телеге)
+        let myId = localStorage.getItem('pwa_chat_id') || 'pwa_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('pwa_chat_id', myId);
+
+        // Активация кнопки отправки при вводе
+        input.addEventListener('input', () => {
+            btn.disabled = !input.value.trim();
+        });
+
+        async function send() {
+            const text = input.value.trim();
+            if(!text) return;
+            
+            // 1. Твое сообщение (User Bubble)
+            addMsg(text, 'user');
+            input.value = '';
+            btn.disabled = true; // Сразу деактивируем кнопку
+
+            // 2. Показываем "загрузку" (как в Gemini)
+            const loadingId = addLoading();
+
+            try {
+                // Стучимся в наш API
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ text, chatId: myId })
+                });
+                
+                if (!res.ok) throw new Error('Network Error');
+                
+                const data = await res.json();
+                
+                // 3. Заменяем загрузку ответом Кати
+                removeLoading(loadingId);
+                addMsg(data.text, 'bot');
+                
+            } catch (e) {
+                removeLoading(loadingId);
+                addMsg('Ошибка связи с Катей. Проверь VPN или логи Vercel.', 'bot', 'bg-red-950 border border-red-800');
+            }
+        }
+
+        // --- Утилитные функции ---
+
+        function addMsg(text, role, extraClasses = '') {
+            const container = document.createElement('div');
+            container.className = `flex gap-3 items-start msg-anim ${role === 'user' ? 'justify-end' : ''}`;
+            
+            const avatar = role === 'bot' ? '<div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent mt-1 flex-shrink-0">✨</div>' : '';
+            const bubbleBg = role === 'bot' ? `bg-geminiBotMsg rounded-tl-none ${extraClasses}` : 'bg-geminiUserMsg rounded-tr-none';
+
+            container.innerHTML = `
+                ${avatar}
+                <div class="${bubbleBg} p-4 rounded-2xl max-w-[85%] leading-relaxed text-[15px]">
+                    ${text}
+                </div>
+            `;
+            
+            msgDiv.appendChild(container);
+            scrollToBottom();
+        }
+
+        // Анимация загрузки (три точки, как у Google)
+        function addLoading() {
+            const id = 'load_' + Date.now();
+            const container = document.createElement('div');
+            container.id = id;
+            container.className = 'flex gap-3 items-start msg-anim';
+            container.innerHTML = `
+                <div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent mt-1 flex-shrink-0">✨</div>
+                <div class="bg-geminiBotMsg p-4 rounded-2xl rounded-tl-none max-w-[85%] flex gap-1 items-center">
+                    <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
+                    <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
+                    <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse"></div>
+                </div>
+            `;
+            msgDiv.appendChild(container);
+            scrollToBottom();
+            return id;
+        }
+
+        function removeLoading(id) {
+            const loadDiv = document.getElementById(id);
+            if(loadDiv) loadDiv.remove();
+        }
+
+        function scrollToBottom() {
+            // Плавный скролл вниз
+            msgDiv.scrollTop = msgDiv.scrollHeight;
+        }
+
+        // Обработчики кнопок
+        btn.onclick = send;
+        input.onkeypress = (e) => e.key === 'Enter' && send();
+    </script>
+</body>
+</html>
