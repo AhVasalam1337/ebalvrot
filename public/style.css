@@ -1,4 +1,8 @@
 /* Главный фикс: фиксированная высота экрана без скролла body */
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent; /* Убирает синюю рамку при нажатии на мобилках */
+}
 html, body {
     height: 100%;
     margin: 0;
