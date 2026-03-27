@@ -1,20 +1,24 @@
 import { sql } from '@vercel/postgres';
 
 export default async function handler(req, res) {
-    // 1. Разрешаем CORS (чтобы браузер не блокировал запрос)
+    // Устанавливаем заголовки для CORS, чтобы браузер не ругался
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    
-    if (req.method === 'OPTIONS') return res.status(200).end();
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    // Обработка пре-флайт запроса от браузера
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
 
     const { chatId } = req.query;
 
     if (!chatId) {
-        return res.status(400).json({ error: "Missing chatId parameter" });
+        return res.status(400).json({ error: "Параметр chatId отсутствует" });
     }
 
     try {
-        // 2. Проверка/Создание таблицы (на случай, если база пустая)
+        // Проверяем наличие таблицы и создаем её, если нужно
         await sql`
             CREATE TABLE IF NOT EXISTS messages (
                 id SERIAL PRIMARY KEY,
@@ -25,7 +29,7 @@ export default async function handler(req, res) {
             );
         `;
 
-        // 3. Запрос данных
+        // Получаем историю
         const { rows } = await sql`
             SELECT role, content 
             FROM messages 
@@ -34,7 +38,7 @@ export default async function handler(req, res) {
             LIMIT 100
         `;
 
-        // 4. Форматирование под фронтенд
+        // Форматируем для фронтенда
         const history = rows.map(row => ({
             role: row.role,
             parts: [{ text: row.content }]
@@ -44,11 +48,9 @@ export default async function handler(req, res) {
 
     } catch (error) {
         console.error("Database Error:", error);
-        // Возвращаем детали ошибки, чтобы мы их увидели в консоли браузера
         return res.status(500).json({ 
-            error: "Internal Server Error", 
-            message: error.message,
-            stack: error.stack 
+            error: "Ошибка сервера", 
+            message: error.message 
         });
     }
 }
