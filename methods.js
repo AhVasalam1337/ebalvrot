@@ -142,6 +142,7 @@ export async function sendTyping(chatId) {
     });
 }
 
+// methods.js (Обновленная функция)
 export async function getGeminiResponse(chatId, userText) {
     const active = await getActiveChat(chatId);
     const historyKey = `history:${chatId}:${active.id}`;
@@ -154,8 +155,26 @@ export async function getGeminiResponse(chatId, userText) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest?key=${GEMINI_KEY}`;
     const contents = [...history, { role: "user", parts: [{ text: `[CONTEXT: ${system}] ${userText}` }] }].slice(-20);
 
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents }) });
+    const res = await fetch(url, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ contents }) 
+    });
+
+    // ФИКС ТУТ: Проверяем, что ответ OK
+    if (!res.ok) {
+        const errText = await res.text();
+        console.error("Gemini Error:", errText);
+        return "⚠️ Катя словила дисконнект. Проверь API ключ в настройках Vercel.";
+    }
+
     const data = await res.json();
+    
+    // Проверка, что в ответе есть текст
+    if (!data.candidates || !data.candidates[0].content) {
+        return "🤐 Кате нечего сказать (пустой ответ от ИИ).";
+    }
+
     const aiText = data.candidates[0].content.parts[0].text;
 
     history.push({ role: "user", parts: [{ text: userText }] }, { role: "model", parts: [{ text: aiText }] });
