@@ -140,7 +140,7 @@ function showLoading() {
     container.className = 'flex gap-3 items-start msg-anim';
     
     // БОТ АВАТАР (Katya Image)
-    const botAvatar = `<img src="https://raw.githubusercontent.com/AhVasalam1337/ebalvrot/main/%D0%B2%D1%8B%D0%B2.png" 
+    const botAvatar = `<img src="https://i.imgur.com/JgGswRe.png" 
                             class="w-9 h-9 rounded-full object-cover border border-gray-700 shadow-sm shrink-0 mt-1">`;
 
     container.innerHTML = `${botAvatar}<div class="bg-geminiBotMsg p-4 rounded-2xl rounded-tl-none flex gap-1 items-center"><div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce"></div><div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:0.1s]"></div><div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:0.2s]"></div></div>`;
