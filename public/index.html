@@ -6,8 +6,11 @@
     <title>Катя ИИ</title>
     <link rel="manifest" href="/manifest.json">
     <link rel="stylesheet" href="/style.css">
+    
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    
     <script>
         tailwind.config = {
             theme: {
@@ -27,14 +30,16 @@
 <body>
 
 <div class="app-container">
-    <header class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-geminiBg backdrop-blur-md shrink-0 pt-[env(safe-area-inset-top)]">
+    <header class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-geminiBg shrink-0 pt-[env(safe-area-inset-top)]">
         <div class="flex items-center gap-2">
-            <span class="material-icons-outlined text-gray-400">menu</span>
+            <span class="material-icons-outlined text-gray-400 cursor-pointer">menu</span>
             <h1 class="text-xl font-medium text-white">Катя</h1>
         </div>
         <div class="flex items-center gap-4">
             <span class="material-icons-outlined text-gray-400 cursor-pointer" onclick="location.reload()">refresh</span>
-            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-sm text-white shadow-lg">P</div>
+            <img src="https://raw.githubusercontent.com/AhVasalam1337/ebalvrot/main/%D0%B2%D1%8B%D0%B2.png" 
+                 alt="Katya" 
+                 class="w-9 h-9 rounded-full object-cover border border-gray-700 shadow-lg">
         </div>
     </header>
 
@@ -46,13 +51,24 @@
 
     <footer>
         <div class="max-w-4xl mx-auto px-3">
-            <div class="flex items-center gap-2 bg-geminiInput border border-gray-700 rounded-full px-3 py-1 shadow-2xl min-h-[48px]">
-                <button class="text-gray-400 hover:text-white transition-colors">
+            <div class="flex items-end gap-2 bg-geminiInput border border-gray-700 rounded-[24px] px-3 py-1 shadow-2xl min-h-[48px]">
+                
+                <button class="text-gray-400 hover:text-white transition-colors pb-1.5 flex-shrink-0">
                     <span class="material-icons-outlined">add</span>
                 </button>
-                <input id="userInput" type="text" placeholder="Введите запрос..." 
-                       class="flex-1 bg-transparent text-[16px] text-white py-2 focus:outline-none">
-                <button id="sendBtn" class="text-geminiAccent disabled:text-gray-600 transition-all" disabled>
+                
+                <textarea id="userInput" 
+                          rows="1"
+                          placeholder="Введите запрос..." 
+                          autocomplete="off"
+                          autocorrect="off"
+                          autocapitalize="sentences"
+                          spellcheck="false"
+                          type="search"
+                          class="flex-1 bg-transparent text-[16px] text-white py-2.5 focus:outline-none resize-none overflow-y-hidden max-h-[150px] leading-snug placeholder:text-gray-500"
+                ></textarea>
+                
+                <button id="sendBtn" class="text-geminiAccent disabled:text-gray-600 transition-all pb-1.5 flex-shrink-0" disabled>
                     <span class="material-icons-outlined">send</span>
                 </button>
             </div>
