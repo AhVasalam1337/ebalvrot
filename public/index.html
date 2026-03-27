@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="/style.css">
     
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     
     <script>
@@ -30,8 +29,27 @@
 <body>
 
 <div class="app-container">
+    <div id="sidebar" class="fixed inset-y-0 left-0 w-[300px] bg-[#1e1f20] z-[100] transform -translate-x-full transition-transform duration-300 ease-in-out border-r border-gray-800 shadow-2xl flex flex-col">
+        
+        <div class="p-6 border-b border-gray-800 flex items-center justify-between">
+            <h2 id="menuTitle" class="text-xl font-bold text-geminiAccent">Меню</h2>
+            <button id="backBtn" class="hidden text-gray-400 hover:text-white transition-colors">
+                <span class="material-icons-outlined">arrow_back</span>
+            </button>
+        </div>
+
+        <nav id="menuContent" class="flex-1 p-4 space-y-2 overflow-y-auto">
+            </nav>
+
+        <div class="p-4 border-t border-gray-800 text-[10px] text-gray-500 text-center uppercase tracking-widest">
+            Geminка PWA v1.0
+        </div>
+    </div>
+
+    <div id="overlay" class="fixed inset-0 bg-black/60 z-[90] hidden opacity-0 transition-opacity duration-300"></div>
+
     <header class="flex items-center justify-between px-3 border-b border-gray-800 bg-geminiBg shrink-0 pt-[env(safe-area-inset-top)] h-[60px] relative z-50">
-        <button class="w-10 h-10 flex items-center justify-center text-gray-400 active:bg-gray-800 rounded-full transition-colors flex-shrink-0">
+        <button id="menuBtn" class="w-10 h-10 flex items-center justify-center text-gray-400 active:bg-gray-800 rounded-full transition-colors flex-shrink-0">
             <span class="material-icons-outlined">menu</span>
         </button>
 
@@ -56,11 +74,9 @@
     <footer>
         <div class="max-w-4xl mx-auto px-3">
             <div class="flex items-center gap-2 bg-geminiInput border border-gray-700 rounded-[24px] px-3 py-1 shadow-2xl min-h-[48px]">
-                
                 <button class="text-gray-400 hover:text-white transition-colors flex-shrink-0 w-8 h-8 flex items-center justify-center">
                     <span class="material-icons-outlined">add</span>
                 </button>
-                
                 <textarea id="userInput" 
                           rows="1"
                           placeholder="Введите запрос..." 
@@ -71,7 +87,6 @@
                           type="search"
                           class="flex-1 bg-transparent text-[16px] text-white py-2.5 focus:outline-none resize-none overflow-y-hidden max-h-[150px] leading-snug placeholder:text-gray-500"
                 ></textarea>
-                
                 <button id="sendBtn" class="text-geminiAccent disabled:text-gray-600 transition-all flex-shrink-0 w-8 h-8 flex items-center justify-center" disabled>
                     <span class="material-icons-outlined">send</span>
                 </button>
