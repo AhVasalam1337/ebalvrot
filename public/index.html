@@ -25,190 +25,199 @@
     </script>
     
     <style>
-        :root { --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom); }
-        body {
-            background-color: #131314;
-            color: #e3e3e3;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            overflow: hidden;
+        /* Главный фикс: фиксированная высота экрана без скролла body */
+        html, body {
+            height: 100%;
             margin: 0;
-            height: 100vh;
-            height: -webkit-fill-available;
+            padding: 0;
+            background-color: #131314;
+            overflow: hidden; 
+        }
+
+        /* Основной контейнер на весь экран */
+        .app-container {
             display: flex;
             flex-direction: column;
+            height: 100vh;
+            height: -webkit-fill-available;
         }
+
+        /* Область сообщений: занимает всё свободное место и скроллится */
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            padding: 1rem;
+        }
+
         #chat-messages::-webkit-scrollbar { width: 0; }
+
+        .message-text { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .msg-anim { animation: fadeIn 0.3s ease-out forwards; }
-        #chat-messages { flex: 1; overflow-y: auto; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; padding-bottom: 20px; }
-        .message-text { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
-        
-        /* Фикс уезжающей строки ввода */
+
+        /* Футер со строкой ввода: всегда прижат к низу и учитывает безопасные зоны */
         footer {
-            padding-bottom: calc(var(--sab) + 1rem);
+            padding: 0.75rem 1rem;
+            padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
             background: #131314;
-            flex-shrink: 0;
+            border-top: 1px solid #282a2c;
         }
     </style>
 </head>
-<body class="bg-geminiBg">
+<body>
 
-    <header class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-geminiBg/80 backdrop-blur-md sticky top-0 z-50 h-[60px] shrink-0 pt-[var(--sat)]">
+<div class="app-container">
+    <header class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-geminiBg/80 backdrop-blur-md shrink-0 pt-[env(safe-area-inset-top)]">
         <div class="flex items-center gap-2">
-            <span class="material-icons-outlined text-gray-400 cursor-pointer">menu</span>
-            <h1 class="text-xl font-medium">Катя</h1>
-            <span class="material-icons-outlined text-geminiAccent text-sm">arrow_drop_down</span>
+            <span class="material-icons-outlined text-gray-400">menu</span>
+            <h1 class="text-xl font-medium text-white">Катя</h1>
         </div>
         <div class="flex items-center gap-4">
             <span class="material-icons-outlined text-gray-400 cursor-pointer" onclick="location.reload()">refresh</span>
-            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-sm shadow-lg">P</div>
+            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-sm text-white shadow-lg">P</div>
         </div>
     </header>
 
-    <main id="chat-messages" class="p-4 md:p-6 space-y-6">
+    <main id="chat-messages">
         <div id="initial-loader" class="flex justify-center items-center h-full">
             <div class="w-6 h-6 border-2 border-geminiAccent border-t-transparent rounded-full animate-spin"></div>
         </div>
     </main>
 
     <footer>
-        <div class="max-w-4xl mx-auto px-3">
-            <div class="flex items-center gap-2 bg-geminiInput border border-gray-700 rounded-full px-2 py-1 shadow-2xl min-h-[56px]">
-                <button class="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-white rounded-full transition-colors">
+        <div class="max-w-4xl mx-auto">
+            <div class="flex items-center gap-2 bg-geminiInput border border-gray-700 rounded-full px-3 py-1 shadow-2xl min-h-[48px]">
+                <button class="text-gray-400 hover:text-white transition-colors">
                     <span class="material-icons-outlined">add</span>
                 </button>
                 <input id="userInput" type="text" placeholder="Введите запрос..." 
-                       class="flex-1 bg-transparent text-[16px] text-white px-2 placeholder:text-gray-500 focus:outline-none">
-                <button id="sendBtn" class="w-10 h-10 flex items-center justify-center text-geminiAccent disabled:text-gray-600 rounded-full transition-all" disabled>
+                       class="flex-1 bg-transparent text-[16px] text-white py-2 focus:outline-none">
+                <button id="sendBtn" class="text-geminiAccent disabled:text-gray-600 transition-all" disabled>
                     <span class="material-icons-outlined">send</span>
                 </button>
             </div>
         </div>
     </footer>
+</div>
 
-    <script>
-        const msgDiv = document.getElementById('chat-messages');
-        const input = document.getElementById('userInput');
-        const btn = document.getElementById('sendBtn');
-        
-        let myId = localStorage.getItem('pwa_chat_id') || 'pwa_' + Math.random().toString(36).substr(2, 9);
-        localStorage.setItem('pwa_chat_id', myId);
+<script>
+    const msgDiv = document.getElementById('chat-messages');
+    const input = document.getElementById('userInput');
+    const btn = document.getElementById('sendBtn');
+    
+    let myId = localStorage.getItem('pwa_chat_id') || 'pwa_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('pwa_chat_id', myId);
 
-        let currentOffset = 0;
-        let isLoadingMore = false;
-        let hasMore = true;
+    let currentOffset = 0;
+    let isLoadingMore = false;
+    let hasMore = true;
 
-        // 1. ПОДГРУЗКА ИСТОРИИ (ПОРЦИЯМИ)
-        async function loadHistory(isFirstLoad = false) {
-            if (isLoadingMore || !hasMore) return;
-            isLoadingMore = true;
+    // 1. ИСТОРИЯ
+    async function loadHistory(isFirstLoad = false) {
+        if (isLoadingMore || !hasMore) return;
+        isLoadingMore = true;
 
-            try {
-                const res = await fetch(`/api/history?chatId=${myId}&limit=10&offset=${currentOffset}`);
-                const data = await res.json();
+        try {
+            const res = await fetch(`/api/history?chatId=${myId}&limit=10&offset=${currentOffset}`);
+            const data = await res.json();
+            
+            if (isFirstLoad) msgDiv.innerHTML = '';
+
+            if (data.history && data.history.length > 0) {
+                const oldHeight = msgDiv.scrollHeight;
                 
-                if (isFirstLoad) msgDiv.innerHTML = '';
-
-                if (data.history && data.history.length > 0) {
-                    const oldHeight = msgDiv.scrollHeight;
-                    
-                    // Рендерим в обратном порядке (старые выше)
-                    [...data.history].reverse().forEach(msg => {
-                        const role = msg.role === 'user' ? 'user' : 'bot';
-                        const text = msg.parts[0].text;
-                        renderMessage(text, role, false, '', true);
-                    });
-
-                    currentOffset += data.history.length;
-                    hasMore = data.hasMore;
-
-                    if (isFirstLoad) {
-                        scrollToBottom('auto');
-                    } else {
-                        msgDiv.scrollTop = msgDiv.scrollHeight - oldHeight;
-                    }
-                } else if (isFirstLoad) {
-                    renderMessage("Привет! Я Катя. Как твои дела?", 'bot', true);
-                }
-            } catch (e) {
-                console.error(e);
-            } finally {
-                isLoadingMore = false;
-            }
-        }
-
-        msgDiv.addEventListener('scroll', () => {
-            if (msgDiv.scrollTop < 50 && hasMore && !isLoadingMore) {
-                loadHistory();
-            }
-        });
-
-        window.addEventListener('DOMContentLoaded', () => loadHistory(true));
-
-        // 2. ОТПРАВКА
-        input.addEventListener('input', () => { btn.disabled = !input.value.trim(); });
-
-        async function send() {
-            const text = input.value.trim();
-            if(!text) return;
-            
-            renderMessage(text, 'user', true);
-            input.value = '';
-            btn.disabled = true;
-            const loadingId = showLoading();
-
-            try {
-                const res = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ text, chatId: myId })
+                [...data.history].reverse().forEach(msg => {
+                    renderMessage(msg.parts[0].text, msg.role === 'user' ? 'user' : 'bot', false, '', true);
                 });
-                const data = await res.json();
-                hideLoading(loadingId);
-                if(data.text) renderMessage(data.text, 'bot', true);
-            } catch (e) {
-                hideLoading(loadingId);
-                renderMessage('Ошибка связи.', 'bot', true, 'bg-red-900/30');
+
+                currentOffset += data.history.length;
+                hasMore = data.hasMore;
+
+                if (isFirstLoad) {
+                    scrollToBottom('auto');
+                } else {
+                    msgDiv.scrollTop = msgDiv.scrollHeight - oldHeight;
+                }
+            } else if (isFirstLoad) {
+                renderMessage("Привет! Я Катя.", 'bot', true);
             }
+        } catch (e) { console.error(e); } finally { isLoadingMore = false; }
+    }
+
+    msgDiv.addEventListener('scroll', () => {
+        if (msgDiv.scrollTop < 20 && hasMore && !isLoadingMore) loadHistory();
+    });
+
+    window.addEventListener('DOMContentLoaded', () => loadHistory(true));
+
+    // 2. ОТПРАВКА
+    input.addEventListener('input', () => { btn.disabled = !input.value.trim(); });
+
+    async function send() {
+        const text = input.value.trim();
+        if(!text) return;
+        renderMessage(text, 'user', true);
+        input.value = '';
+        btn.disabled = true;
+        const loadingId = showLoading();
+
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ text, chatId: myId })
+            });
+            const data = await res.json();
+            hideLoading(loadingId);
+            if(data.text) renderMessage(data.text, 'bot', true);
+        } catch (e) {
+            hideLoading(loadingId);
+            renderMessage('Ошибка.', 'bot', true, 'bg-red-900/30');
         }
+    }
 
-        // 3. РЕНДЕР
-        function renderMessage(text, role, animate = true, extraClass = '', prepend = false) {
-            const container = document.createElement('div');
-            container.className = `flex gap-3 items-start ${animate ? 'msg-anim' : ''} ${role === 'user' ? 'flex-row-reverse' : ''}`;
-            
-            const avatar = role === 'bot' 
-                ? '<div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent mt-1 shrink-0 shadow-sm">✨</div>' 
-                : '<div class="w-9 h-9 rounded-full bg-blue-700 flex items-center justify-center text-white mt-1 shrink-0 shadow-sm text-xs font-bold">P</div>';
+    // 3. РЕНДЕР
+    function renderMessage(text, role, animate = true, extraClass = '', prepend = false) {
+        const container = document.createElement('div');
+        container.className = `flex gap-3 items-start ${animate ? 'msg-anim' : ''} ${role === 'user' ? 'flex-row-reverse' : ''}`;
+        
+        const avatar = role === 'bot' 
+            ? '<div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent shrink-0 shadow-sm text-sm">✨</div>' 
+            : '<div class="w-9 h-9 rounded-full bg-blue-700 flex items-center justify-center text-white shrink-0 shadow-sm text-xs font-bold">P</div>';
 
-            const bubbleBg = role === 'bot' ? `bg-geminiBotMsg rounded-2xl rounded-tl-none ${extraClass}` : `bg-geminiUserMsg rounded-2xl rounded-tr-none`;
+        const bubbleBg = role === 'bot' ? `bg-geminiBotMsg rounded-2xl rounded-tl-none ${extraClass}` : `bg-geminiUserMsg rounded-2xl rounded-tr-none`;
 
-            container.innerHTML = `${avatar}<div class="${bubbleBg} p-4 max-w-[85%] shadow-sm"><div class="message-text text-[15px]">${text}</div></div>`;
-            
-            if (prepend) {
-                msgDiv.prepend(container);
-            } else {
-                msgDiv.appendChild(container);
-                if(animate) scrollToBottom('smooth');
-            }
-        }
-
-        function showLoading() {
-            const id = 'l_' + Date.now();
-            const container = document.createElement('div');
-            container.id = id;
-            container.className = 'flex gap-3 items-start msg-anim';
-            container.innerHTML = `<div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent mt-1 shrink-0">✨</div><div class="bg-geminiBotMsg p-4 rounded-2xl rounded-tl-none flex gap-1 items-center"><div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div><div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div><div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce"></div></div>`;
+        container.innerHTML = `${avatar}<div class="${bubbleBg} p-4 max-w-[85%] shadow-sm"><div class="message-text text-[15px]">${text}</div></div>`;
+        
+        if (prepend) {
+            msgDiv.prepend(container);
+        } else {
             msgDiv.appendChild(container);
-            scrollToBottom('smooth');
-            return id;
+            if(animate) scrollToBottom('smooth');
         }
+    }
 
-        function hideLoading(id) { document.getElementById(id)?.remove(); }
-        function scrollToBottom(behavior) { msgDiv.scrollTo({ top: msgDiv.scrollHeight, behavior }); }
+    function showLoading() {
+        const id = 'l_' + Date.now();
+        const container = document.createElement('div');
+        container.id = id;
+        container.className = 'flex gap-3 items-start msg-anim';
+        container.innerHTML = `<div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent shrink-0 text-sm">✨</div><div class="bg-geminiBotMsg p-4 rounded-2xl rounded-tl-none flex gap-1 items-center"><div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce"></div><div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:0.1s]"></div><div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:0.2s]"></div></div>`;
+        msgDiv.appendChild(container);
+        scrollToBottom('smooth');
+        return id;
+    }
 
-        btn.onclick = send;
-        input.onkeypress = (e) => e.key === 'Enter' && send();
-    </script>
+    function hideLoading(id) { document.getElementById(id)?.remove(); }
+    function scrollToBottom(behavior) { msgDiv.scrollTo({ top: msgDiv.scrollHeight, behavior }); }
+
+    btn.onclick = send;
+    input.onkeypress = (e) => e.key === 'Enter' && send();
+</script>
 </body>
 </html>
