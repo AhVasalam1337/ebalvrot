@@ -114,7 +114,8 @@ async function syncRules() {
 
 async function deleteRule(id) {
     if(confirm('Удалить это правило из БД?')) {
-        await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+        // В Vercel без Express параметры передаем через query string
+        await fetch(`/api/rules?id=${id}`, { method: 'DELETE' });
         syncRules();
     }
 }
