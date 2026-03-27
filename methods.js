@@ -142,7 +142,7 @@ export async function sendTyping(chatId) {
     });
 }
 
-// methods.js (Обновленная функция)
+// methods.js (Back to Pro version)
 export async function getGeminiResponse(chatId, userText) {
     const active = await getActiveChat(chatId);
     const historyKey = `history:${chatId}:${active.id}`;
@@ -150,34 +150,47 @@ export async function getGeminiResponse(chatId, userText) {
     
     const rules = active.rules || [];
     const t = active.traits || { brevity: 5, empathy: 5, humanity: 5 };
-    const system = `Твои черты: лаконичность ${t.brevity}/10, эмпатия ${t.empathy}/10, человечность ${t.humanity}/10. Правила: ${rules.join('. ')}`;
     
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest?key=${GEMINI_KEY}`;
-    const contents = [...history, { role: "user", parts: [{ text: `[CONTEXT: ${system}] ${userText}` }] }].slice(-20);
-
-    const res = await fetch(url, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ contents }) 
-    });
-
-    // ФИКС ТУТ: Проверяем, что ответ OK
-    if (!res.ok) {
-        const errText = await res.text();
-        console.error("Gemini Error:", errText);
-        return "⚠️ Катя словила дисконнект. Проверь API ключ в настройках Vercel.";
-    }
-
-    const data = await res.json();
+    // Та самая системка, которая работала
+    const systemPrompt = `Ты — Катя. Твой характер: лаконичность ${t.brevity}/10, эмпатия ${t.empathy}/10, человечность ${t.humanity}/10. Соблюдай правила: ${rules.join(', ')}.`;
     
-    // Проверка, что в ответе есть текст
-    if (!data.candidates || !data.candidates[0].content) {
-        return "🤐 Кате нечего сказать (пустой ответ от ИИ).";
+    // ВОЗВРАЩАЕМ PRO ВЕРСИЮ
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_KEY}`;
+    
+    const cleanHistory = history.filter(h => h && h.parts && h.parts[0].text);
+    const contents = [
+        ...cleanHistory, 
+        { role: "user", parts: [{ text: `[SYSTEM: ${systemPrompt}] ${userText}` }] }
+    ].slice(-24); // Прошка тянет контекст лучше
+
+    try {
+        const res = await fetch(url, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ contents }) 
+        });
+
+        if (!res.ok) {
+            const errorData = await res.text();
+            console.error("Gemini API Error Status:", res.status);
+            console.error("Full Error:", errorData);
+            return "⚠️ Катя поймала лаг (ошибка API). Попробуй позже или проверь ключ.";
+        }
+
+        const data = await res.json();
+
+        if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+            const aiText = data.candidates[0].content.parts[0].text;
+            
+            // Записываем чистую историю
+            history.push({ role: "user", parts: [{ text: userText }] }, { role: "model", parts: [{ text: aiText }] });
+            await kv.set(historyKey, history.slice(-40), { ex: 604800 });
+            return aiText;
+        } else {
+            return "🤐 Что-то пошло не так, ответа нет. Попробуй нажать '🧹 Снести всё'.";
+        }
+    } catch (e) {
+        console.error("Network Error:", e);
+        return "🌪 Катю выкинуло из сети. Проверь логи Vercel.";
     }
-
-    const aiText = data.candidates[0].content.parts[0].text;
-
-    history.push({ role: "user", parts: [{ text: userText }] }, { role: "model", parts: [{ text: aiText }] });
-    await kv.set(historyKey, history.slice(-30), { ex: 604800 });
-    return aiText;
 }
