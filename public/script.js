@@ -7,6 +7,14 @@ const overlay = document.getElementById('overlay');
 const menuContent = document.getElementById('menuContent');
 const menuTitle = document.getElementById('menuTitle');
 const backBtn = document.getElementById('backBtn');
+const chatNameDisplay = document.getElementById('chatNameDisplay');
+
+// Модальное окно
+const modalOverlay = document.getElementById('modalOverlay');
+const modalTitle = document.getElementById('modalTitle');
+const modalBody = document.getElementById('modalBody');
+const modalSave = document.getElementById('modalSave');
+const modalCancel = document.getElementById('modalCancel');
 
 let myId = localStorage.getItem('pwa_chat_id') || 'pwa_' + Math.random().toString(36).substr(2, 9);
 localStorage.setItem('pwa_chat_id', myId);
@@ -16,56 +24,82 @@ let isLoadingMore = false;
 let hasMore = true;
 
 /**
- * 1. ЛОГИКА МЕНЮ (НАСТРОЙКИ ИЗ ТЕЛЕГРАМА)
+ * 1. ЛОГИКА МЕНЮ И НАСТРОЕК (ИЗ ПРОЕКТА БОТА)
  */
-const MENU_STATES = {
-    MAIN: 'MAIN',
-    SETTINGS: 'SETTINGS'
-};
+const MENU_STATES = { MAIN: 'MAIN', SETTINGS: 'SETTINGS' };
 
 function renderMenu(state) {
     menuContent.innerHTML = '';
-    
     if (state === MENU_STATES.MAIN) {
         menuTitle.innerText = 'Меню';
         backBtn.classList.add('hidden');
-        
         const items = [
-            { icon: 'forum', text: 'Диалоги', action: () => alert('Скоро: список чатов') },
-            { icon: 'gavel', text: 'Правила', action: () => alert('Правила Geminка...') },
+            { icon: 'forum', text: 'Диалоги', action: () => alert('Список чатов в разработке') },
+            { icon: 'gavel', text: 'Правила', action: () => showModal('Правила', 'Будь вежлив, Geminка всё помнит.', false) },
             { icon: 'settings', text: 'Настройки', action: () => renderMenu(MENU_STATES.SETTINGS) }
         ];
-
-        items.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'flex items-center gap-3 text-gray-300 p-3 hover:bg-gray-800 rounded-xl cursor-pointer transition-colors';
-            div.innerHTML = `<span class="material-icons-outlined">${item.icon}</span><span>${item.text}</span>`;
-            div.onclick = item.action;
-            menuContent.appendChild(div);
-        });
-    } 
-    else if (state === MENU_STATES.SETTINGS) {
+        items.forEach(item => createMenuItem(item));
+    } else {
         menuTitle.innerText = 'Настройки';
         backBtn.classList.remove('hidden');
-        
         const items = [
-            { icon: 'psychology', text: 'Настройка характера', action: () => alert('Логика промпта...') },
-            { icon: 'edit', text: 'Переименовать чат', action: () => alert('Новое имя...') },
-            { icon: 'delete_forever', text: 'Удалить чат', action: () => {
-                if(confirm('Удалить всю историю?')) alert('Удалено');
-            }, color: 'text-red-400' }
+            { icon: 'psychology', text: 'Настройка характера', action: () => openCharacterSettings() },
+            { icon: 'edit', text: 'Переименовать чат', action: () => openRenameChat() },
+            { icon: 'delete_forever', text: 'Удалить чат', action: () => deleteChatAction(), color: 'text-red-400' }
         ];
-
-        items.forEach(item => {
-            const div = document.createElement('div');
-            div.className = `flex items-center gap-3 ${item.color || 'text-gray-300'} p-3 hover:bg-gray-800 rounded-xl cursor-pointer transition-colors`;
-            div.innerHTML = `<span class="material-icons-outlined">${item.icon}</span><span>${item.text}</span>`;
-            div.onclick = item.action;
-            menuContent.appendChild(div);
-        });
+        items.forEach(item => createMenuItem(item));
     }
 }
 
+function createMenuItem(item) {
+    const div = document.createElement('div');
+    div.className = `flex items-center gap-3 ${item.color || 'text-gray-300'} p-3 hover:bg-gray-800 rounded-xl cursor-pointer transition-colors`;
+    div.innerHTML = `<span class="material-icons-outlined">${item.icon}</span><span>${item.text}</span>`;
+    div.onclick = item.action;
+    menuContent.appendChild(div);
+}
+
+// Функции-действия (API интеграция как в боте)
+async function openCharacterSettings() {
+    const currentPrompt = "Ты — Geminка, умный и верный ИИ-ассистент."; // В будущем тянуть с API
+    showModal('Характер', `<textarea id="modalInput" class="w-full h-32 bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-geminiAccent">${currentPrompt}</textarea>`, async () => {
+        const val = document.getElementById('modalInput').value;
+        await fetch('/api/settings/character', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ chatId: myId, prompt: val }) });
+        toggleMenu(); 
+    });
+}
+
+async function openRenameChat() {
+    showModal('Переименовать', `<input id="modalInput" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-geminiAccent" value="${chatNameDisplay.innerText}">`, async () => {
+        const val = document.getElementById('modalInput').value;
+        chatNameDisplay.innerText = val;
+        await fetch('/api/settings/rename', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ chatId: myId, name: val }) });
+        toggleMenu();
+    });
+}
+
+async function deleteChatAction() {
+    if(confirm('Удалить всю историю безвозвратно?')) {
+        await fetch(`/api/history?chatId=${myId}`, { method: 'DELETE' });
+        location.reload();
+    }
+}
+
+/**
+ * 2. СИСТЕМНЫЕ ОКНА И МОДАЛКИ
+ */
+function showModal(title, bodyHtml, onSave) {
+    modalTitle.innerText = title;
+    modalBody.innerHTML = bodyHtml;
+    modalOverlay.classList.remove('hidden');
+    if (!onSave) modalSave.classList.add('hidden');
+    else {
+        modalSave.classList.remove('hidden');
+        modalSave.onclick = onSave;
+    }
+}
+
+modalCancel.onclick = () => modalOverlay.classList.add('hidden');
 backBtn.onclick = () => renderMenu(MENU_STATES.MAIN);
 
 function toggleMenu() {
@@ -77,7 +111,7 @@ function toggleMenu() {
         setTimeout(() => overlay.classList.add('hidden'), 300);
         document.body.style.overflow = '';
     } else {
-        renderMenu(MENU_STATES.MAIN); // Всегда сбрасываем на главную при открытии
+        renderMenu(MENU_STATES.MAIN);
         overlay.classList.remove('hidden');
         setTimeout(() => overlay.classList.remove('opacity-0'), 10);
         sidebar.classList.remove('-translate-x-full');
@@ -90,12 +124,11 @@ menuBtn.onclick = toggleMenu;
 overlay.onclick = toggleMenu;
 
 /**
- * 2. ПОДГРУЗКА ИСТОРИИ
+ * 3. БАЗОВАЯ ЛОГИКА ЧАТА (БЕЗ ИЗМЕНЕНИЙ)
  */
 async function loadHistory(isFirstLoad = false) {
     if (isLoadingMore || !hasMore) return;
     isLoadingMore = true;
-
     try {
         const res = await fetch(`/api/history?chatId=${myId}&limit=10&offset=${currentOffset}`);
         const data = await res.json();
@@ -115,15 +148,6 @@ async function loadHistory(isFirstLoad = false) {
     } catch (e) { console.error(e); } finally { isLoadingMore = false; }
 }
 
-msgDiv.addEventListener('scroll', () => {
-    if (msgDiv.scrollTop < 20 && hasMore && !isLoadingMore) loadHistory();
-});
-
-window.addEventListener('DOMContentLoaded', () => loadHistory(true));
-
-/**
- * 3. ОТПРАВКА
- */
 input.addEventListener('input', function() {
     btn.disabled = !this.value.trim();
     this.style.height = 'auto';
@@ -148,23 +172,13 @@ async function send() {
     btn.disabled = true;
     const loadingId = showLoading();
     try {
-        const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ text, chatId: myId })
-        });
+        const res = await fetch('/api/chat', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ text, chatId: myId }) });
         const data = await res.json();
         hideLoading(loadingId);
         if(data.text) renderMessage(data.text, 'bot', true);
-    } catch (e) {
-        hideLoading(loadingId);
-        renderMessage('Ошибка.', 'bot', true, 'bg-red-900/30');
-    }
+    } catch (e) { hideLoading(loadingId); renderMessage('Ошибка.', 'bot', true, 'bg-red-900/30'); }
 }
 
-/**
- * 4. РЕНДЕР
- */
 function renderMessage(text, role, animate = true, extraClass = '', prepend = false) {
     const container = document.createElement('div');
     container.className = `flex gap-3 items-start ${animate ? 'msg-anim' : ''} ${role === 'user' ? 'flex-row-reverse' : ''}`;
@@ -193,6 +207,5 @@ function hideLoading(id) { document.getElementById(id)?.remove(); }
 function scrollToBottom(behavior) { msgDiv.scrollTo({ top: msgDiv.scrollHeight, behavior }); }
 
 btn.onclick = send;
-input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-});
+window.addEventListener('DOMContentLoaded', () => loadHistory(true));
+input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
