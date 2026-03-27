@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Катя ИИ</title>
+    <title>Geminка ИИ</title>
     <link rel="manifest" href="/manifest.json">
     <link rel="stylesheet" href="/style.css">
     
@@ -30,16 +30,20 @@
 <body>
 
 <div class="app-container">
-    <header class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-geminiBg shrink-0 pt-[env(safe-area-inset-top)]">
-        <div class="flex items-center gap-2">
-            <span class="material-icons-outlined text-gray-400 cursor-pointer">menu</span>
-            <h1 class="text-xl font-medium text-white">Катя</h1>
+    <header class="flex items-center justify-between px-3 border-b border-gray-800 bg-geminiBg shrink-0 pt-[env(safe-area-inset-top)] h-[60px] relative z-50">
+        <button class="w-10 h-10 flex items-center justify-center text-gray-400 active:bg-gray-800 rounded-full transition-colors flex-shrink-0">
+            <span class="material-icons-outlined">menu</span>
+        </button>
+
+        <div class="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 mt-[calc(env(safe-area-inset-top)/2)]">
+            <h1 class="text-xl font-medium text-white tracking-tight">Geminка</h1>
         </div>
-        <div class="flex items-center gap-4">
-            <span class="material-icons-outlined text-gray-400 cursor-pointer" onclick="location.reload()">refresh</span>
-            <img src="https://i.imgur.com/JgGswRe.png" 
-                 alt="Katya" 
-                 class="w-9 h-9 rounded-full object-cover border border-gray-700 shadow-lg">
+        
+        <div class="flex items-center gap-1 flex-shrink-0">
+            <button class="w-10 h-10 flex items-center justify-center text-gray-400 active:bg-gray-800 rounded-full transition-colors" onclick="location.reload()">
+                <span class="material-icons-outlined">refresh</span>
+            </button>
+            <div class="w-2"></div> 
         </div>
     </header>
 
@@ -51,9 +55,9 @@
 
     <footer>
         <div class="max-w-4xl mx-auto px-3">
-            <div class="flex items-end gap-2 bg-geminiInput border border-gray-700 rounded-[24px] px-3 py-1 shadow-2xl min-h-[48px]">
+            <div class="flex items-center gap-2 bg-geminiInput border border-gray-700 rounded-[24px] px-3 py-1 shadow-2xl min-h-[48px]">
                 
-                <button class="text-gray-400 hover:text-white transition-colors pb-1.5 flex-shrink-0">
+                <button class="text-gray-400 hover:text-white transition-colors flex-shrink-0 w-8 h-8 flex items-center justify-center">
                     <span class="material-icons-outlined">add</span>
                 </button>
                 
@@ -68,7 +72,7 @@
                           class="flex-1 bg-transparent text-[16px] text-white py-2.5 focus:outline-none resize-none overflow-y-hidden max-h-[150px] leading-snug placeholder:text-gray-500"
                 ></textarea>
                 
-                <button id="sendBtn" class="text-geminiAccent disabled:text-gray-600 transition-all pb-1.5 flex-shrink-0" disabled>
+                <button id="sendBtn" class="text-geminiAccent disabled:text-gray-600 transition-all flex-shrink-0 w-8 h-8 flex items-center justify-center" disabled>
                     <span class="material-icons-outlined">send</span>
                 </button>
             </div>
