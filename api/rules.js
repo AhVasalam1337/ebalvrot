@@ -1,29 +1,33 @@
-const { sql } = require('@vercel/postgres');
+import { sql } from '@vercel/postgres';
 
 export default async function handler(req, res) {
-    const { method } = req;
-    const { id } = req.query; // Для удаления через /api/rules?id=...
+    // Добавляем CORS заголовки на всякий случай
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') return res.status(200).end();
 
     try {
-        if (method === 'GET') {
+        if (req.method === 'GET') {
             const { rows } = await sql`SELECT id, text FROM rules ORDER BY created_at ASC`;
-            return res.status(200).json({ rules: rows });
+            return res.status(200).json({ rules: rows || [] });
         }
 
-        if (method === 'POST') {
-            const { text } = JSON.parse(req.body);
+        if (req.method === 'POST') {
+            const { text } = req.body; // Vercel автоматически парсит JSON в body
+            if (!text) return res.status(400).json({ error: "Text is required" });
             await sql`INSERT INTO rules (text) VALUES (${text})`;
             return res.status(200).json({ success: true });
         }
 
-        if (method === 'DELETE') {
+        if (req.method === 'DELETE') {
+            const { id } = req.query;
             await sql`DELETE FROM rules WHERE id = ${id}`;
             return res.status(200).json({ success: true });
         }
-
-        res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
-        res.status(405).end(`Method ${method} Not Allowed`);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error(error);
+        return res.status(500).json({ error: error.message, details: "Check BalastDB connection" });
     }
 }
