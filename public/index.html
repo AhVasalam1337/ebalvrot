@@ -15,11 +15,11 @@
             theme: {
                 extend: {
                     colors: {
-                        geminiBg: '#131314', // Тот самый темно-серый фон
-                        geminiInput: '#1e1f20', // Фон поля ввода
-                        geminiBotMsg: '#1e1f20', // Баббл Кати
-                        geminiUserMsg: '#282a2c', // Баббл твой
-                        geminiAccent: '#8ab4f8' // Голубой акцент
+                        geminiBg: '#131314',
+                        geminiInput: '#1e1f20',
+                        geminiBotMsg: '#1e1f20',
+                        geminiUserMsg: '#282a2c',
+                        geminiAccent: '#8ab4f8'
                     }
                 }
             }
@@ -30,60 +30,63 @@
         body {
             background-color: #131314;
             color: #e3e3e3;
-            font-family: 'Google Sans', sans-serif; /* Почти Google Sans */
-            overflow: hidden; /* Убираем скролл самого body */
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            margin: 0;
         }
         
-        /* Стилизация скроллбара (как в Android/iOS) */
         #chat-messages::-webkit-scrollbar { width: 0; }
         
-        /* Анимация появления сообщения */
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .msg-anim { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { 
+            from { opacity: 0; transform: translateY(10px); } 
+            to { opacity: 1; transform: translateY(0); } 
+        }
+        .msg-anim { animation: fadeIn 0.3s ease-out forwards; }
         
-        /* Плавный автоскролл */
-        #chat-messages { scroll-behavior: smooth; }
-        
-        /* Фикс для iOS, чтобы input не ломал верстку */
-        input:focus { outline: none; }
+        #chat-messages { 
+            scroll-behavior: smooth; 
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Чтобы текст не слипался и переносился как в мессенджерах */
+        .message-text {
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.5;
+        }
     </style>
 </head>
-<body class="flex flex-col h-screen overflow-hidden">
+<body class="flex flex-col h-screen">
 
-    <header class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-geminiBg/80 backdrop-blur-md sticky top-0 z-50 h-[60px]">
+    <header class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-geminiBg/80 backdrop-blur-md sticky top-0 z-50 h-[60px] shrink-0">
         <div class="flex items-center gap-2">
-            <span class="material-icons-outlined text-gray-400">menu</span>
+            <span class="material-icons-outlined text-gray-400 cursor-pointer">menu</span>
             <h1 class="text-xl font-medium">Катя</h1>
             <span class="material-icons-outlined text-geminiAccent text-sm">arrow_drop_down</span>
         </div>
         <div class="flex items-center gap-4">
-            <span class="material-icons-outlined text-gray-400">add_comment</span>
-            <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center font-bold text-sm">P</div>
+            <span class="material-icons-outlined text-gray-400 cursor-pointer" onclick="location.reload()">refresh</span>
+            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-sm shadow-lg">P</div>
         </div>
     </header>
 
-    <main id="chat-messages" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 pb-[100px]">
-        
-        <div class="flex gap-3 items-start msg-anim">
-            <div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent mt-1 flex-shrink-0">✨</div>
-            <div class="bg-geminiBotMsg p-4 rounded-2xl rounded-tl-none max-w-[85%] leading-relaxed text-[15px]">
-                Привет! Я теперь и тут. Как ты?
-            </div>
+    <main id="chat-messages" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 pb-10">
+        <div id="initial-loader" class="flex justify-center items-center h-full">
+            <div class="w-6 h-6 border-2 border-geminiAccent border-t-transparent rounded-full animate-spin"></div>
         </div>
-
     </main>
 
-    <footer class="p-3 pb-5 bg-geminiBg sticky bottom-0 z-40">
-        <div class="flex items-center gap-2 bg-geminiInput border border-gray-700 rounded-full px-2 py-1 shadow-inner h-[56px]">
+    <footer class="p-3 pb-6 bg-geminiBg shrink-0">
+        <div class="max-w-4xl mx-auto flex items-center gap-2 bg-geminiInput border border-gray-700 rounded-full px-2 py-1 shadow-2xl min-h-[56px]">
             
-            <button class="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-white rounded-full">
+            <button class="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-white rounded-full transition-colors">
                 <span class="material-icons-outlined">add</span>
             </button>
             
             <input id="userInput" type="text" placeholder="Введите запрос..." 
-                   class="flex-1 bg-transparent text-[16px] text-white px-2 placeholder:text-gray-500 focus:ring-0">
+                   class="flex-1 bg-transparent text-[16px] text-white px-2 placeholder:text-gray-500 focus:outline-none focus:ring-0">
             
-            <button id="sendBtn" class="w-10 h-10 flex items-center justify-center text-geminiAccent disabled:text-gray-600 rounded-full" disabled>
+            <button id="sendBtn" class="w-10 h-10 flex items-center justify-center text-geminiAccent disabled:text-gray-600 rounded-full transition-all" disabled>
                 <span class="material-icons-outlined">send</span>
             </button>
             
@@ -94,100 +97,118 @@
         const msgDiv = document.getElementById('chat-messages');
         const input = document.getElementById('userInput');
         const btn = document.getElementById('sendBtn');
+        const loader = document.getElementById('initial-loader');
         
-        // Авторизация: Берем chatId из LocalStorage (потом привяжем к Телеге)
+        // Идентификатор сессии (pwa_ чтобы не путать с tg_)
         let myId = localStorage.getItem('pwa_chat_id') || 'pwa_' + Math.random().toString(36).substr(2, 9);
         localStorage.setItem('pwa_chat_id', myId);
 
-        // Активация кнопки отправки при вводе
-        input.addEventListener('input', () => {
-            btn.disabled = !input.value.trim();
+        // 1. ПОДГРУЗКА ИСТОРИИ ПРИ СТАРТЕ
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const res = await fetch(`/api/history?chatId=${myId}`);
+                const data = await res.json();
+                
+                msgDiv.innerHTML = ''; // Убираем крутилку
+                
+                if (data.history && data.history.length > 0) {
+                    data.history.forEach(msg => {
+                        const role = msg.role === 'user' ? 'user' : 'bot';
+                        const text = msg.parts[0].text;
+                        renderMessage(text, role, false);
+                    });
+                    scrollToBottom('auto');
+                } else {
+                    renderMessage("Привет! Я Катя. Как твои дела?", 'bot', true);
+                }
+            } catch (e) {
+                msgDiv.innerHTML = '<div class="text-center text-gray-500 py-10">Не удалось загрузить историю...</div>';
+            }
         });
+
+        // 2. ОТПРАВКА СООБЩЕНИЯ
+        input.addEventListener('input', () => { btn.disabled = !input.value.trim(); });
 
         async function send() {
             const text = input.value.trim();
             if(!text) return;
             
-            // 1. Твое сообщение (User Bubble)
-            addMsg(text, 'user');
+            renderMessage(text, 'user', true);
             input.value = '';
-            btn.disabled = true; // Сразу деактивируем кнопку
+            btn.disabled = true;
 
-            // 2. Показываем "загрузку" (как в Gemini)
-            const loadingId = addLoading();
+            const loadingId = showLoading();
 
             try {
-                // Стучимся в наш API
                 const res = await fetch('/api/chat', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ text, chatId: myId })
                 });
                 
-                if (!res.ok) throw new Error('Network Error');
-                
                 const data = await res.json();
+                hideLoading(loadingId);
                 
-                // 3. Заменяем загрузку ответом Кати
-                removeLoading(loadingId);
-                addMsg(data.text, 'bot');
-                
+                if(data.text) {
+                    renderMessage(data.text, 'bot', true);
+                } else {
+                    throw new Error();
+                }
             } catch (e) {
-                removeLoading(loadingId);
-                addMsg('Ошибка связи с Катей. Проверь VPN или логи Vercel.', 'bot', 'bg-red-950 border border-red-800');
+                hideLoading(loadingId);
+                renderMessage('Ошибка связи. Катя не отвечает.', 'bot', true, 'bg-red-900/30 border border-red-800');
             }
         }
 
-        // --- Утилитные функции ---
-
-        function addMsg(text, role, extraClasses = '') {
+        // 3. РЕНДЕР БАББЛОВ
+        function renderMessage(text, role, animate = true, extraClass = '') {
             const container = document.createElement('div');
-            container.className = `flex gap-3 items-start msg-anim ${role === 'user' ? 'justify-end' : ''}`;
+            container.className = `flex gap-3 items-start ${animate ? 'msg-anim' : ''} ${role === 'user' ? 'flex-row-reverse' : ''}`;
             
-            const avatar = role === 'bot' ? '<div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent mt-1 flex-shrink-0">✨</div>' : '';
-            const bubbleBg = role === 'bot' ? `bg-geminiBotMsg rounded-tl-none ${extraClasses}` : 'bg-geminiUserMsg rounded-tr-none';
+            const avatar = role === 'bot' 
+                ? '<div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent mt-1 shrink-0 shadow-sm">✨</div>' 
+                : '<div class="w-9 h-9 rounded-full bg-blue-700 flex items-center justify-center text-white mt-1 shrink-0 shadow-sm text-xs font-bold">P</div>';
+
+            const bubbleBg = role === 'bot' 
+                ? `bg-geminiBotMsg rounded-2xl rounded-tl-none ${extraClass}` 
+                : `bg-geminiUserMsg rounded-2xl rounded-tr-none`;
 
             container.innerHTML = `
                 ${avatar}
-                <div class="${bubbleBg} p-4 rounded-2xl max-w-[85%] leading-relaxed text-[15px]">
-                    ${text}
+                <div class="${bubbleBg} p-4 max-w-[85%] shadow-sm">
+                    <div class="message-text text-[15px]">${text}</div>
                 </div>
             `;
             
             msgDiv.appendChild(container);
-            scrollToBottom();
+            if(animate) scrollToBottom('smooth');
         }
 
-        // Анимация загрузки (три точки, как у Google)
-        function addLoading() {
-            const id = 'load_' + Date.now();
+        // 4. ИНДИКАТОР ЗАГРУЗКИ
+        function showLoading() {
+            const id = 'l_' + Date.now();
             const container = document.createElement('div');
             container.id = id;
             container.className = 'flex gap-3 items-start msg-anim';
             container.innerHTML = `
-                <div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent mt-1 flex-shrink-0">✨</div>
-                <div class="bg-geminiBotMsg p-4 rounded-2xl rounded-tl-none max-w-[85%] flex gap-1 items-center">
-                    <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
-                    <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
-                    <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse"></div>
+                <div class="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-geminiAccent mt-1 shrink-0">✨</div>
+                <div class="bg-geminiBotMsg p-4 rounded-2xl rounded-tl-none flex gap-1 items-center">
+                    <div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    <div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                    <div class="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce"></div>
                 </div>
             `;
             msgDiv.appendChild(container);
-            scrollToBottom();
+            scrollToBottom('smooth');
             return id;
         }
 
-        function removeLoading(id) {
-            const loadDiv = document.getElementById(id);
-            if(loadDiv) loadDiv.remove();
+        function hideLoading(id) { document.getElementById(id)?.remove(); }
+
+        function scrollToBottom(behavior) {
+            msgDiv.scrollTo({ top: msgDiv.scrollHeight, behavior });
         }
 
-        function scrollToBottom() {
-            // Плавный скролл вниз
-            msgDiv.scrollTop = msgDiv.scrollHeight;
-        }
-
-        // Обработчики кнопок
         btn.onclick = send;
         input.onkeypress = (e) => e.key === 'Enter' && send();
     </script>
