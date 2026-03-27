@@ -113,7 +113,7 @@ function renderMessage(text, role, animate = true, extraClass = '', prepend = fa
     container.className = `flex gap-3 items-start ${animate ? 'msg-anim' : ''} ${role === 'user' ? 'flex-row-reverse' : ''}`;
     
     // БОТ АВАТАР (Katya Image)
-    const botAvatar = `<img src="https://raw.githubusercontent.com/AhVasalam1337/ebalvrot/main/%D0%B2%D1%8B%D0%B2.png" 
+    const botAvatar = `<img src="https://i.imgur.com/JgGswRe.png" 
                             class="w-9 h-9 rounded-full object-cover border border-gray-700 shadow-sm shrink-0 mt-1">`;
     
     // ЮЗЕР АВАТАР ('К')
