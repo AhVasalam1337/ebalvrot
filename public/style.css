@@ -7,8 +7,9 @@ html, body {
     height: 100%;
     margin: 0;
     padding: 0;
-    background-color: #131314;
+    background-color: #131314 !important; /* Force dark background */
     overflow: hidden; 
+    color-scheme: dark; /* Говорит браузеру, что мы в темной теме */
 }
 
 /* Основной контейнер на весь экран */
@@ -17,6 +18,9 @@ html, body {
     flex-direction: column;
     height: 100vh;
     height: -webkit-fill-available;
+    background-color: #131314;
+    position: relative;
+    z-index: 1;
 }
 
 /* Область сообщений */
@@ -30,8 +34,11 @@ html, body {
     padding: 1rem;
 }
 
-#chat-messages::-webkit-scrollbar { 
-    width: 0; 
+#chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    background-color: #131314;
+    /* ... остальные стили ... */
 }
 
 .message-text { 
