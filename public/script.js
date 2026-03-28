@@ -62,14 +62,27 @@ async function selectChat(id, name, isInitial = false) {
         const data = await api('chat');
         userSettings = data.settings || userSettings;
         msgDiv.innerHTML = '';
-        if (data.history) {
-            data.history.forEach(m => renderMessage(m.parts[0].text, m.role === 'user' ? 'user' : 'bot'));
+        
+        if (data.history && Array.isArray(data.history)) {
+            data.history.forEach(m => {
+                // Универсальное получение текста (проверяем и text, и parts)
+                const messageText = m.text || (m.parts && m.parts[0] ? m.parts[0].text : "");
+                if (messageText) {
+                    renderMessage(messageText, m.role === 'user' ? 'user' : 'bot');
+                }
+            });
         }
+        
+        // Если история пуста, можно вывести приветствие (опционально)
+        if (!data.history || data.history.length === 0) {
+            msgDiv.innerHTML = '<div class="p-10 text-center text-gray-700 text-xs uppercase tracking-widest">История пуста. Напиши что-нибудь!</div>';
+        }
+
     } catch (e) {
+        console.error("Front-end Error:", e);
         msgDiv.innerHTML = '<div class="p-10 text-center text-red-500 text-xs">ОШИБКА ЗАГРУЗКИ</div>';
     }
     
-    // Закрываем меню только если это НЕ первая загрузка страницы
     if (!isInitial && window.innerWidth < 1024) toggleMenu();
 }
 
