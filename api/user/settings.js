@@ -3,6 +3,8 @@ const redis = Redis.fromEnv();
 
 export default async function handler(req, res) {
     const { userId, chatId } = req.query;
+    if (!userId || !chatId) return res.status(400).json({ error: "No IDs" });
+
     const key = `user:${userId}:chat:${chatId}:settings`;
 
     if (req.method === 'GET') {
@@ -12,6 +14,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
         const { settings } = req.body;
+        // Сохраняем настройки как Hash в Redis
         await redis.hset(key, settings);
         return res.status(200).json({ success: true });
     }
