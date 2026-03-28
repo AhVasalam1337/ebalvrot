@@ -1,7 +1,8 @@
 import { Redis } from '@upstash/redis';
+const redis = Redis.fromEnv();
 import { getGeminiResponse } from '../methods.js';
 
-const redis = Redis.fromEnv();
+
 const DEFAULTS = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
 
 export default async function handler(req, res) {
