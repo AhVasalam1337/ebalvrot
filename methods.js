@@ -8,7 +8,7 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
  * @param {Array} contents - История сообщений в формате {role, parts}.
  */
 export async function getGeminiResponse(systemInstruction, contents) {
-    const model = "gemini-1.5-flash"; // Оптимально для диалогов
+    const model = "gemini-3.1-flash-lite-preview";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
     const payload = {
