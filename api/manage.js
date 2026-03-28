@@ -18,6 +18,7 @@ export default async function handler(req, res) {
                 return res.status(200).json({ success: true });
             }
             if (method === 'DELETE') {
+                // Исправлено: удаление по значению
                 await redis.lrem(key, 0, req.query.text);
                 return res.status(200).json({ success: true });
             }
@@ -26,24 +27,20 @@ export default async function handler(req, res) {
         if (action === 'chat') {
             const settingsKey = `user:${userId}:chat:${chatId}:settings`;
             const metaKey = `chat:${chatId}:meta`;
+            const historyKey = `history:${chatId}`;
 
             if (method === 'GET') {
                 const [rawHistory, settings, meta] = await Promise.all([
-                    redis.lrange(`history:${chatId}`, -50, -1),
+                    redis.lrange(historyKey, -50, -1),
                     redis.hgetall(settingsKey),
                     redis.hgetall(metaKey)
                 ]);
 
-                // Гарантируем, что история — это массив объектов, а не пустой null
                 const history = (rawHistory || []).map(item => {
-                    try {
-                        return typeof item === 'string' ? JSON.parse(item) : item;
-                    } catch (e) {
-                        return { role: 'user', text: String(item) };
-                    }
+                    try { return typeof item === 'string' ? JSON.parse(item) : item; }
+                    catch (e) { return { role: 'user', text: String(item) }; }
                 });
 
-                // Возвращаем всегда валидный объект, даже если данных в Redis нет
                 return res.status(200).json({ 
                     history: history || [], 
                     settings: settings || DEFAULTS, 
@@ -55,16 +52,25 @@ export default async function handler(req, res) {
                 const { name, settings } = req.body;
                 if (name) await redis.hset(metaKey, { name, updatedAt: Date.now() });
                 if (settings) {
-                    // Принудительно чистим настройки перед сохранением
-                    const cleanSettings = {
-                        human: settings.human || 5,
-                        laconic: settings.laconic || 5,
-                        empathy: settings.empathy || 5,
-                        contextLimit: settings.contextLimit || 20
-                    };
-                    await redis.hset(settingsKey, cleanSettings);
+                    await redis.hset(settingsKey, {
+                        human: Number(settings.human) || 5,
+                        laconic: Number(settings.laconic) || 5,
+                        empathy: Number(settings.empathy) || 5,
+                        contextLimit: Number(settings.contextLimit) || 20
+                    });
                 }
                 await redis.sadd(`user:${userId}:chats`, chatId);
+                return res.status(200).json({ success: true });
+            }
+
+            // НОВОЕ: ПОЛНАЯ ОЧИСТКА ЧАТА (Если всё пошло по пизде)
+            if (method === 'DELETE') {
+                await Promise.all([
+                    redis.del(historyKey),
+                    redis.del(settingsKey),
+                    redis.del(metaKey),
+                    redis.srem(`user:${userId}:chats`, chatId)
+                ]);
                 return res.status(200).json({ success: true });
             }
         }
@@ -88,6 +94,6 @@ export default async function handler(req, res) {
         return res.status(405).end();
     } catch (e) {
         console.error("Manage Error:", e);
-        return res.status(200).json({ history: [], settings: DEFAULTS, meta: {}, error: e.message });
+        return res.status(500).json({ error: e.message });
     }
 }
