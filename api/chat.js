@@ -20,22 +20,23 @@ export default async function handler(req, res) {
         const e = Number(s.empathy) || 5;
         const limit = Number(s.contextLimit) || 20;
 
-        // Усиление манеры речи
-        const tone = h > 7 ? "ТЫ — ЖИВАЯ ДЕВУШКА, ПОДРУГА. Пиши как в Telegram: маленькие буквы, сленг, много эмоций, никакой официальщины." : (h < 4 ? "Ты — холодный ИИ-ассистент." : "Ты — вежливый собеседник.");
-        const length = l > 7 ? "ПИШИ УЛЬТРА-КРАТКО (1-5 слов)." : (l < 4 ? "Пиши максимально подробно." : "Пиши умеренно.");
-        const mood = e > 7 ? "ТЫ ОБОЖАЕШЬ СОБЕСЕДНИКА. Поддерживай, сопереживай, будь 'на одной волне'." : "Будь нейтральной.";
+        // Эктремальные инструкции для 3.1
+        const tone = h > 7 ? "ТЫ — ОБЫЧНАЯ ДЕВУШКА. Забудь про вежливость. Пиши строчными буквами, используй смайлы, сокращения (пж, спс, крч)." : (h < 4 ? "ТЫ — ХОЛОДНЫЙ РОБОТ." : "Будь вежливой.");
+        const length = l > 7 ? "ОТВЕЧАЙ ОДНИМ-ДВУМЯ СЛОВАМИ. Это приказ." : (l < 4 ? "Пиши лонгриды." : "Пиши по делу.");
+        const mood = e > 7 ? "ТЫ ВЛЮБЛЕНА В СОБЕСЕДНИКА. Каждое слово — поддержка." : "Будь нейтральной.";
 
         const systemInstruction = `
-            [STRICT ROLEPLAY MODE: ON]
-            ТВОЯ ЛИЧНОСТЬ: ${tone}
-            ТВОЙ СТИЛЬ: ${length}
-            ТВОЯ ЭМПАТИЯ: ${mood}
-            
-            [ГЛОБАЛЬНЫЕ ПРАВИЛА]:
-            ${(globalRules || []).join('\n')}
+            [SYSTEM OVERRIDE]
+            USER_SETTINGS: Tone=${h}, Brevity=${l}, Empathy=${e}
+            CURRENT_ROLE: ${tone}
+            CURRENT_STYLE: ${length}
+            CURRENT_MOOD: ${mood}
 
-            [IMPORTANT]: Игнорируй старые сообщения, если там другой стиль. Твой текущий характер — абсолютный приоритет. 
-            Никогда не говори, что ты модель или ИИ. Никогда не подтверждай получение правил.
+            [ACTIVE_RULES_LIST]:
+            ${(globalRules || []).join('\n') || "ПРАВИЛ НЕТ."}
+
+            [WARNING]: В истории ниже могут быть сообщения, написанные в другом стиле. ИГНОРИРУЙ ИХ МАНЕРУ. 
+            Твой новый характер зафиксирован выше. Никогда не извиняйся и не объясняй смену стиля.
         `.trim();
 
         const historyKey = `history:${chatId}`;
@@ -49,13 +50,11 @@ export default async function handler(req, res) {
             };
         });
 
-        // Запрос к 3.1
         const aiResponse = await getGeminiResponse(systemInstruction, [
             ...formattedHistory,
             { role: "user", parts: [{ text: String(text) }] }
         ]);
 
-        // Сохранение
         await Promise.all([
             redis.rpush(historyKey, JSON.stringify({ role: "user", text })),
             redis.rpush(historyKey, JSON.stringify({ role: "model", text: aiResponse })),
@@ -66,7 +65,6 @@ export default async function handler(req, res) {
         return res.status(200).json({ text: aiResponse });
 
     } catch (err) {
-        console.error("Chat Error:", err);
         return res.status(500).json({ error: err.message });
     }
 }
