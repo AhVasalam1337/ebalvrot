@@ -6,13 +6,12 @@ const menuContent = document.getElementById('menuContent');
 const sidebar = document.getElementById('sidebar');
 const overlay = document.getElementById('overlay');
 
-// ГАРАНТИЯ: Инициализация ID пользователя, чтобы он не менялся при перезагрузке
+// Инициализация ID пользователя
 let userId = localStorage.getItem('pwa_user_id');
 if (!userId || userId === 'null' || userId === 'undefined') {
     userId = 'u_' + Math.random().toString(36).substr(2, 9);
     localStorage.setItem('pwa_user_id', userId);
 }
-console.log("Current User ID:", userId);
 
 let currentChatId = localStorage.getItem('pwa_chat_id');
 let userSettings = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
@@ -64,7 +63,7 @@ async function api(action, method = 'GET', body = null, forceChatId = null) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return await res.json();
     } catch (e) {
-        console.error(`API Error (${action}):`, e);
+        console.error("API Call failed:", e);
         return {};
     }
 }
@@ -88,8 +87,8 @@ async function selectChat(id, name, isInitial = false) {
         msgDiv.innerHTML = '';
         if (data.history && Array.isArray(data.history)) {
             data.history.forEach(m => {
-                const text = m.text || (m.parts && m.parts[0] ? m.parts[0].text : "");
-                if (text) renderMessage(text, m.role === 'user' ? 'user' : 'bot');
+                const p = typeof m === 'string' ? JSON.parse(m) : m;
+                renderMessage(p.text, p.role === 'user' ? 'user' : 'bot');
             });
         }
         if (!data.history || data.history.length === 0) {
@@ -102,7 +101,6 @@ async function selectChat(id, name, isInitial = false) {
     if (!isInitial && window.innerWidth < 1024) toggleMenu();
 }
 
-// Переименование чата
 chatNameDisplay.onclick = async () => {
     const oldName = chatNameDisplay.innerText;
     const newName = prompt("Новое название чата:", oldName);
@@ -129,7 +127,7 @@ async function handleSend() {
         const data = await res.json();
         if (data.text) renderMessage(data.text, 'bot', true);
     } catch (e) {
-        renderMessage("Ошибка: сервер не отвечает.", "bot");
+        renderMessage("Ошибка сервера.", "bot");
     }
 }
 
@@ -175,7 +173,7 @@ function renderMenu(state) {
 }
 
 async function syncDialogs() {
-    menuContent.innerHTML = '<div class="p-6 text-center text-xs text-gray-600 animate-pulse uppercase tracking-widest">Загрузка списка...</div>';
+    menuContent.innerHTML = '<div class="p-6 text-center text-xs text-gray-600 animate-pulse uppercase tracking-widest">Загрузка...</div>';
     try {
         const data = await api('list');
         const list = data.list || [];
@@ -186,27 +184,24 @@ async function syncDialogs() {
         addBtn.innerText = '+ Создать новый диалог';
         addBtn.onclick = async () => {
             const newId = 'c_' + Math.random().toString(36).substr(2, 9);
-            // Принудительная инициализация в базе через POST
             await api('chat', 'POST', { name: "Новый диалог" }, newId);
             selectChat(newId, "Новый диалог");
         };
         menuContent.appendChild(addBtn);
 
-        if (list.length > 0) {
-            list.forEach(d => {
-                const el = document.createElement('div');
-                el.className = `p-4 mb-2 rounded-2xl border transition-all ${d.id === currentChatId ? 'border-geminiAccent bg-geminiAccent/10' : 'border-gray-800 bg-gray-900/50'}`;
-                el.innerHTML = `
-                    <div class="flex justify-between items-center">
-                        <span class="truncate cursor-pointer flex-1 text-sm ${d.id === currentChatId ? 'text-white font-bold' : 'text-gray-400'}" 
-                              onclick="selectChat('${d.id}', '${d.name}')">${d.name}</span>
-                        <button onclick="deleteChat('${d.id}')" class="text-gray-600 hover:text-red-500 ml-3 text-xl">×</button>
-                    </div>`;
-                menuContent.appendChild(el);
-            });
-        }
+        list.forEach(d => {
+            const el = document.createElement('div');
+            el.className = `p-4 mb-2 rounded-2xl border transition-all ${d.id === currentChatId ? 'border-geminiAccent bg-geminiAccent/10' : 'border-gray-800 bg-gray-900/50'}`;
+            el.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <span class="truncate cursor-pointer flex-1 text-sm ${d.id === currentChatId ? 'text-white font-bold' : 'text-gray-400'}" 
+                          onclick="selectChat('${d.id}', '${d.name}')">${d.name}</span>
+                    <button onclick="deleteChat('${d.id}')" class="text-gray-600 hover:text-red-500 ml-3 text-xl">×</button>
+                </div>`;
+            menuContent.appendChild(el);
+        });
     } catch (e) {
-        menuContent.innerHTML = '<div class="p-4 text-red-500 text-xs">Ошибка загрузки списка</div>';
+        menuContent.innerHTML = '<div class="p-4 text-red-500 text-xs">Ошибка загрузки</div>';
     }
 }
 
@@ -243,15 +238,15 @@ async function syncRules() {
     }
 }
 
-window.deleteRule = async (encodedText) => {
-    if (confirm('Стереть это правило из системы?')) {
-        await fetch(`/api/manage?action=rules&userId=${userId}&text=${encodedText}`, { method: 'DELETE' });
+window.deleteRule = async (enc) => {
+    if (confirm('Удалить правило?')) {
+        await fetch(`/api/manage?action=rules&userId=${userId}&text=${enc}`, { method: 'DELETE' });
         syncRules();
     }
 };
 
 window.deleteChat = async (id) => {
-    if (confirm('Удалить диалог безвозвратно?')) {
+    if (confirm('Удалить диалог?')) {
         await api('chat', 'DELETE', null, id);
         if (currentChatId === id) {
             localStorage.removeItem('pwa_chat_id');
@@ -292,7 +287,7 @@ function renderSettings() {
 }
 
 /**
- * ЗАПУСК ПРИЛОЖЕНИЯ
+ * ИНИЦИАЛИЗАЦИЯ
  */
 document.addEventListener('DOMContentLoaded', async () => {
     input.addEventListener('input', checkInput);
@@ -303,17 +298,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     sendBtn.onclick = handleSend;
 
     try {
-        // 1. Сначала ГАРАНТИРОВАННО получаем список чатов из базы
         const data = await api('list');
         const list = data.list || [];
 
-        // 2. Если в localStorage есть ID, но его нет в списке базы (битый ID) — берем первый из списка
-        if (currentChatId && list.length > 0 && !list.find(c => c.id === currentChatId)) {
-            currentChatId = list[0].id;
-            localStorage.setItem('pwa_chat_id', currentChatId);
-        }
-
-        // 3. Если чатов нет СОВСЕМ — создаем первый
         if (list.length === 0) {
             const firstId = 'c_' + Math.random().toString(36).substr(2, 9);
             currentChatId = firstId;
@@ -321,13 +308,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             await api('chat', 'POST', { name: "Первый чат" }, firstId);
             await selectChat(firstId, "Первый чат", true);
         } else {
-            const toLoad = currentChatId || list[0].id;
-            const chatInfo = list.find(c => c.id === toLoad) || list[0];
-            await selectChat(chatInfo.id, chatInfo.name, true);
+            const toLoad = currentChatId && list.find(c => c.id === currentChatId) ? currentChatId : list[0].id;
+            const chat = list.find(c => c.id === toLoad) || list[0];
+            await selectChat(chat.id, chat.name, true);
         }
     } catch (e) {
-        console.error("Critical Start Error:", e);
+        console.error("Critical Startup Error:", e);
     }
-    
     checkInput();
 });
