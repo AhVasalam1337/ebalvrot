@@ -18,7 +18,6 @@ const STATES = { MAIN: 'MAIN', DIALOGS: 'DIALOGS', RULES: 'RULES', SETTINGS: 'SE
 function checkInput() {
     const text = input.value.trim();
     sendBtn.disabled = text.length === 0;
-    // Визуальный фидбек для кнопки
     sendBtn.style.opacity = text.length > 0 ? '1' : '0.5';
     sendBtn.style.cursor = text.length > 0 ? 'pointer' : 'default';
 }
@@ -55,36 +54,41 @@ async function api(action, method = 'GET', body = null) {
 async function selectChat(id, name, isInitial = false) {
     currentChatId = id;
     localStorage.setItem('pwa_chat_id', id);
-    chatNameDisplay.innerText = name || "Чат";
     msgDiv.innerHTML = '<div class="p-10 text-center text-gray-600 animate-pulse text-xs uppercase tracking-widest">Загрузка истории...</div>';
     
     try {
         const data = await api('chat');
         userSettings = data.settings || userSettings;
-        msgDiv.innerHTML = '';
+        // Приоритет имени: из базы (meta) -> из аргумента -> "Чат"
+        chatNameDisplay.innerText = data.meta?.name || name || "Чат";
         
+        msgDiv.innerHTML = '';
         if (data.history && Array.isArray(data.history)) {
             data.history.forEach(m => {
-                // Универсальное получение текста (проверяем и text, и parts)
-                const messageText = m.text || (m.parts && m.parts[0] ? m.parts[0].text : "");
-                if (messageText) {
-                    renderMessage(messageText, m.role === 'user' ? 'user' : 'bot');
-                }
+                const text = m.text || (m.parts && m.parts[0] ? m.parts[0].text : "");
+                if (text) renderMessage(text, m.role === 'user' ? 'user' : 'bot');
             });
         }
-        
-        // Если история пуста, можно вывести приветствие (опционально)
-        if (!data.history || data.history.length === 0) {
-            msgDiv.innerHTML = '<div class="p-10 text-center text-gray-700 text-xs uppercase tracking-widest">История пуста. Напиши что-нибудь!</div>';
-        }
-
     } catch (e) {
-        console.error("Front-end Error:", e);
         msgDiv.innerHTML = '<div class="p-10 text-center text-red-500 text-xs">ОШИБКА ЗАГРУЗКИ</div>';
     }
     
     if (!isInitial && window.innerWidth < 1024) toggleMenu();
 }
+
+// Клик по заголовку для переименования
+chatNameDisplay.onclick = async () => {
+    const oldName = chatNameDisplay.innerText;
+    const newName = prompt("Введите новое название чата:", oldName);
+    if (newName && newName.trim() && newName !== oldName) {
+        chatNameDisplay.innerText = newName.trim();
+        await api('chat', 'POST', { name: newName.trim() });
+        // Если открыто меню диалогов, обновляем его для актуальности имен
+        if (!document.getElementById('sidebar').classList.contains('-translate-x-full')) {
+            renderMenu(STATES.DIALOGS);
+        }
+    }
+};
 
 async function handleSend() {
     const text = input.value.trim();
@@ -94,13 +98,17 @@ async function handleSend() {
     checkInput();
     renderMessage(text, 'user');
     
-    const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, chatId: currentChatId, userId })
-    });
-    const data = await res.json();
-    if (data.text) renderMessage(data.text, 'bot', true);
+    try {
+        const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, chatId: currentChatId, userId })
+        });
+        const data = await res.json();
+        if (data.text) renderMessage(data.text, 'bot', true);
+    } catch (e) {
+        renderMessage("Ошибка связи с сервером.", "bot");
+    }
 }
 
 /**
@@ -148,71 +156,77 @@ function renderMenu(state) {
 }
 
 async function syncDialogs() {
-    menuContent.innerHTML = '<div class="p-4 text-center text-xs text-gray-600 animate-pulse">СПИСОК ПУСТ...</div>';
-    const { list } = await api('list');
-    menuContent.innerHTML = '';
+    menuContent.innerHTML = '<div class="p-4 text-center text-xs text-gray-600 animate-pulse">ЗАГРУЗКА...</div>';
+    try {
+        const { list } = await api('list');
+        menuContent.innerHTML = '';
 
-    const addBtn = document.createElement('button');
-    addBtn.className = 'w-full p-3 mb-4 border border-dashed border-geminiAccent/30 text-geminiAccent text-[10px] font-black uppercase rounded-xl hover:bg-geminiAccent/5';
-    addBtn.innerText = '+ Создать новый чат';
-addBtn.onclick = async () => {
-        const newId = 'c_' + Math.random().toString(36).substr(2, 9);
-        // ПЕРЕДАЕМ newId В КВЕРИ ИЛИ ТЕЛЕ
-        currentChatId = newId; // Сначала обновляем локальный ID
-        await api('chat', 'POST', { name: "Новый диалог" });
-        selectChat(newId, "Новый диалог");
-    };
-    menuContent.appendChild(addBtn);
+        const addBtn = document.createElement('button');
+        addBtn.className = 'w-full p-3 mb-4 border border-dashed border-geminiAccent/30 text-geminiAccent text-[10px] font-black uppercase rounded-xl hover:bg-geminiAccent/5 transition-all';
+        addBtn.innerText = '+ Создать новый чат';
+        addBtn.onclick = async () => {
+            const newId = 'c_' + Math.random().toString(36).substr(2, 9);
+            currentChatId = newId;
+            await api('chat', 'POST', { name: "Новый диалог" });
+            selectChat(newId, "Новый диалог");
+        };
+        menuContent.appendChild(addBtn);
 
-    list.forEach(d => {
-        const el = document.createElement('div');
-        el.className = `p-3 mb-2 rounded-xl border transition-all ${d.id === currentChatId ? 'border-geminiAccent bg-geminiAccent/10' : 'border-gray-800 bg-gray-900/50'}`;
-        el.innerHTML = `
-            <div class="flex justify-between items-center">
-                <span class="truncate cursor-pointer flex-1 text-sm ${d.id === currentChatId ? 'text-white font-bold' : 'text-gray-400'}" 
-                      onclick="selectChat('${d.id}', '${d.name}')">${d.name}</span>
-                <button onclick="deleteChat('${d.id}')" class="text-gray-600 hover:text-red-500 ml-2">×</button>
-            </div>`;
-        menuContent.appendChild(el);
-    });
+        if (!list || list.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'p-4 text-center text-xs text-gray-600';
+            empty.innerText = 'НЕТ ДИАЛОГОВ';
+            menuContent.appendChild(empty);
+        } else {
+            list.forEach(d => {
+                const el = document.createElement('div');
+                el.className = `p-3 mb-2 rounded-xl border transition-all ${d.id === currentChatId ? 'border-geminiAccent bg-geminiAccent/10' : 'border-gray-800 bg-gray-900/50'}`;
+                el.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="truncate cursor-pointer flex-1 text-sm ${d.id === currentChatId ? 'text-white font-bold' : 'text-gray-400'}" 
+                              onclick="selectChat('${d.id}', '${d.name}')">${d.name}</span>
+                        <button onclick="deleteChat('${d.id}')" class="text-gray-600 hover:text-red-500 ml-2 text-lg px-2">×</button>
+                    </div>`;
+                menuContent.appendChild(el);
+            });
+        }
+    } catch (e) {
+        menuContent.innerHTML = '<div class="p-4 text-red-500 text-xs">ОШИБКА СПИСКА</div>';
+    }
 }
+
 async function syncRules() {
     menuContent.innerHTML = '<div class="p-4 text-center animate-pulse">Загрузка правил...</div>';
     const data = await api('rules');
     menuContent.innerHTML = '';
 
-    // Форма добавления
     const addWrap = document.createElement('div');
     addWrap.className = 'mb-6 p-2 bg-white/5 rounded-xl';
     addWrap.innerHTML = `
         <input id="newRuleInp" type="text" placeholder="Новое правило..." class="w-full bg-transparent p-2 text-sm text-white outline-none">
-        <button id="addRuleBtn" class="w-full mt-2 p-2 bg-geminiAccent text-black text-[10px] font-bold rounded-lg uppercase">Добавить</button>
+        <button id="addRuleBtn" class="w-full mt-2 p-2 bg-geminiAccent text-black text-[10px] font-bold rounded-lg uppercase transition-transform active:scale-95">Добавить</button>
     `;
     menuContent.appendChild(addWrap);
 
-// Внутри syncRules в script.js
-document.getElementById('addRuleBtn').onclick = async () => {
-    const val = document.getElementById('newRuleInp').value.trim();
-    if (val) {
-        // ВАЖНО: передаем в теле JSON { text: "..." }
-        await fetch(`/api/manage?action=rules&userId=${userId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: val }) // Обязательно поле text
-        });
-        document.getElementById('newRuleInp').value = '';
-        syncRules();
-    }
-};
+    document.getElementById('addRuleBtn').onclick = async () => {
+        const val = document.getElementById('newRuleInp').value.trim();
+        if (val) {
+            await fetch(`/api/manage?action=rules&userId=${userId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: val })
+            });
+            syncRules();
+        }
+    };
 
-    // Список правил
     if (data.rules && data.rules.length > 0) {
         data.rules.forEach(r => {
             const div = document.createElement('div');
             div.className = 'flex justify-between items-start gap-2 p-3 mb-2 bg-gray-800/40 rounded-lg border border-gray-700';
             div.innerHTML = `
                 <span class="text-xs text-gray-300 flex-1">${r.text}</span>
-                <button class="text-red-500 hover:scale-125 transition-transform" onclick="deleteRule('${r.text}')">×</button>
+                <button class="text-red-500 hover:scale-125 transition-transform text-lg px-1" onclick="deleteRule('${r.text.replace(/'/g, "\\'")}')">×</button>
             `;
             menuContent.appendChild(div);
         });
@@ -221,16 +235,22 @@ document.getElementById('addRuleBtn').onclick = async () => {
 
 window.deleteRule = async (text) => {
     if (confirm('Удалить это правило?')) {
-        await fetch(`/api/manage?action=rules&text=${encodeURIComponent(text)}`, { method: 'DELETE' });
+        await fetch(`/api/manage?action=rules&userId=${userId}&text=${encodeURIComponent(text)}`, { method: 'DELETE' });
         syncRules();
     }
 };
 
 window.deleteChat = async (id) => {
     if (confirm('Удалить чат навсегда?')) {
+        const oldId = currentChatId;
         currentChatId = id;
         await api('chat', 'DELETE');
-        location.reload();
+        if (oldId === id) {
+            localStorage.removeItem('pwa_chat_id');
+            location.reload();
+        } else {
+            syncDialogs();
+        }
     }
 };
 
@@ -246,7 +266,7 @@ function renderSettings() {
         div.innerHTML = `
             <div class="flex justify-between text-[10px] text-gray-500 uppercase font-black mb-2">
                 <span>${f.n}</span>
-                <span id="v_${f.id}" class="text-geminiAccent">${val === 51 ? '∞' : val}</span>
+                <span id="v_${f.id}" class="text-geminiAccent">${val == 51 ? '∞' : val}</span>
             </div>
             <input type="range" min="0" max="${f.max || 10}" value="${val}" class="w-full accent-geminiAccent h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer" 
             oninput="userSettings['${f.id}']=parseInt(this.value); document.getElementById('v_${f.id}').innerText=(this.value == 51 ? '∞' : this.value)">`;
@@ -265,17 +285,14 @@ function renderSettings() {
 
 // ИНИЦИАЛИЗАЦИЯ
 document.addEventListener('DOMContentLoaded', () => {
-    // Слушатели ввода
     input.addEventListener('input', checkInput);
     input.addEventListener('keydown', (e) => (e.key === 'Enter' && !e.shiftKey) ? (e.preventDefault(), handleSend()) : null);
     
-    // Кнопки интерфейса
     document.getElementById('menuBtn').onclick = toggleMenu;
     document.getElementById('overlay').onclick = toggleMenu;
     document.getElementById('backBtn').onclick = () => renderMenu(STATES.MAIN);
     document.getElementById('sendBtn').onclick = handleSend;
 
-    // Стартовая загрузка
     if (!currentChatId) {
         const tempId = 'c_' + Math.random().toString(36).substr(2, 9);
         currentChatId = tempId;
