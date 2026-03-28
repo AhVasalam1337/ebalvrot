@@ -6,7 +6,11 @@ export default async function handler(req, res) {
     const { chatId, name } = req.body;
 
     try {
-        await redis.hset(`chat:${chatId}:meta`, { name: name, updatedAt: Date.now() });
+        // Сохраняем именно в хеш-таблицу метаданных чата
+        await redis.hset(`chat:${chatId}:meta`, { 
+            name: name, 
+            updatedAt: Date.now() 
+        });
         return res.status(200).json({ success: true });
     } catch (e) {
         return res.status(500).json({ error: e.message });
