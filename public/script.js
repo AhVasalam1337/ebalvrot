@@ -175,13 +175,20 @@ async function syncRules() {
     `;
     menuContent.appendChild(addWrap);
 
-    document.getElementById('addRuleBtn').onclick = async () => {
-        const val = document.getElementById('newRuleInp').value;
-        if (val) {
-            await api('rules', 'POST', { text: val });
-            syncRules();
-        }
-    };
+// Внутри syncRules в script.js
+document.getElementById('addRuleBtn').onclick = async () => {
+    const val = document.getElementById('newRuleInp').value.trim();
+    if (val) {
+        // ВАЖНО: передаем в теле JSON { text: "..." }
+        await fetch(`/api/manage?action=rules&userId=${userId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: val }) // Обязательно поле text
+        });
+        document.getElementById('newRuleInp').value = '';
+        syncRules();
+    }
+};
 
     // Список правил
     if (data.rules && data.rules.length > 0) {
