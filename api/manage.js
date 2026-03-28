@@ -26,18 +26,19 @@ export default async function handler(req, res) {
                 ]);
 
                 // БЕЗОПАСНЫЙ ПАРСИНГ: Если один месседж битый, он просто пропустится, а не уронит всё
-                const history = (rawHistory || []).reduce((acc, item) => {
+                const history = (rawHistory || []).map(item => {
                     try {
                         const p = typeof item === 'string' ? JSON.parse(item) : item;
-                        acc.push({
+                        const text = p.text || (p.parts && p.parts[0] ? p.parts[0].text : String(item));
+                        return {
                             role: p.role || 'user',
-                            text: p.text || (p.parts ? p.parts[0].text : "") || String(item)
-                        });
+                            text: text,
+                            parts: [{ text: text }] // Дублируем для совместимости со старым фронтом
+                        };
                     } catch (e) {
-                        console.warn("Skip broken history item");
+                        return { role: 'user', text: String(item), parts: [{ text: String(item) }] };
                     }
-                    return acc;
-                }, []);
+                });, []);
 
                 return res.status(200).json({ 
                     history: history, 
