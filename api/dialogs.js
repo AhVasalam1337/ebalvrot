@@ -1,43 +1,48 @@
 import { Redis } from '@upstash/redis';
-
 const redis = Redis.fromEnv();
 
 export default async function handler(req, res) {
-    // Настройка CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    
-    if (req.method === 'OPTIONS') return res.status(200).end();
-
-    const { userId } = req.query;
-    if (!userId) return res.status(400).json({ error: "Missing userId" });
+    const { userId, chatId } = req.query;
 
     try {
-        // 1. Получаем список всех chat_id для этого пользователя
-        // Мы храним их в Set (множестве), чтобы ID не дублировались
-        const chatIds = await redis.smembers(`user:${userId}:chats`);
-
-        if (!chatIds || chatIds.length === 0) {
-            return res.status(200).json({ list: [] });
+        // УДАЛЕНИЕ ДИАЛОГА
+        if (req.method === 'DELETE') {
+            if (!userId || !chatId) return res.status(400).json({ error: "Missing data" });
+            // Удаляем из списка пользователя
+            await redis.srem(`user:${userId}:chats`, chatId);
+            // Удаляем саму историю и мету (опционально, для чистоты базы)
+            await redis.del(`history:${chatId}`, `chat:${chatId}:meta`);
+            return res.status(200).json({ success: true });
         }
 
-        // 2. Получаем метаданные для каждого чата (например, имя)
-        // Если метаданных нет, создаем дефолтное имя
-        const list = await Promise.all(chatIds.map(async (id) => {
-            const meta = await redis.hgetall(`chat:${id}:meta`);
-            return {
-                id: id,
-                name: meta?.name || `Чат ${id.substring(0, 5)}`,
-                updatedAt: meta?.updatedAt || Date.now()
-            };
-        }));
+        // ПОЛУЧЕНИЕ СПИСКА
+        if (req.method === 'GET') {
+            if (!userId) return res.status(400).json({ error: "Missing userId" });
+            const chatIds = await redis.smembers(`user:${userId}:chats`);
+            if (!chatIds.length) return res.status(200).json({ list: [] });
 
-        // Сортируем по дате (свежие сверху)
-        list.sort((a, b) => b.updatedAt - a.updatedAt);
+            const list = await Promise.all(chatIds.map(async (id) => {
+                const meta = await redis.hgetall(`chat:${id}:meta`);
+                return {
+                    id: id,
+                    name: meta?.name || `Чат ${id.slice(-4)}`,
+                    updatedAt: parseInt(meta?.updatedAt) || Date.now()
+                };
+            }));
+            list.sort((a, b) => b.updatedAt - a.updatedAt);
+            return res.status(200).json({ list });
+        }
+        
+        // СОЗДАНИЕ ПУСТОГО ЧАТА (чтобы он сразу был в списке)
+        if (req.method === 'POST') {
+            const { userId, chatId } = req.body;
+            await redis.sadd(`user:${userId}:chats`, chatId);
+            await redis.hset(`chat:${chatId}:meta`, { updatedAt: Date.now(), name: "Новый чат" });
+            return res.status(200).json({ success: true });
+        }
 
-        return res.status(200).json({ list });
-    } catch (error) {
-        console.error("Redis Dialogs Error:", error);
-        return res.status(500).json({ error: error.message });
+    } catch (e) {
+        return res.status(500).json({ error: e.message });
     }
 }
