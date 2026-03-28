@@ -21,18 +21,17 @@ export default async function handler(req, res) {
         const e = Number(s.empathy || 5);
         const limit = Number(s.contextLimit || 20);
 
-        // ДИНАМИЧЕСКИЙ ХАРАКТЕР: Инструкции теперь зависят от ползунков
         const systemInstruction = `
-            [PERSONALITY CONFIGURATION]
-            - Slang/Humanity: ${h}/10 (1=Robot, 10=Use heavy street slang, "bro", "бля", informal style)
-            - Brevity/Laconic: ${l}/10 (1=Long explanations, 10=Answer in 1-3 words only)
-            - Empathy: ${e}/10 (1=Cold logic, 10=Warm, supportive, emotional)
+            [PERSONALITY]
+            - Slang/Informality: ${h}/10 (1=Robot, 10=Street slang, swear words if natural, "bro")
+            - Brevity: ${l}/10 (1=Verbose, 10=1-5 words max)
+            - Empathy: ${e}/10 (1=Cold, 10=Very emotional/supportive)
             
-            [SYSTEM RULES]
+            [RULES]
             ${(globalRules || []).join('\n')}
             
-            [OUTPUT INSTRUCTIONS]
-            Respond naturally based on settings. If Slang is high, be very informal. If Laconic is high, be extremely brief.
+            [STYLE]
+            Strictly follow these levels. If Brevity is 10, never write more than one sentence.
         `.trim();
 
         const historyKey = `history:${chatId}`;
@@ -50,7 +49,7 @@ export default async function handler(req, res) {
         await Promise.all([
             redis.rpush(historyKey, JSON.stringify({ role: "user", text })),
             redis.rpush(historyKey, JSON.stringify({ role: "model", text: aiResponse })),
-            redis.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() }), // Не меняем имя автоматически
+            redis.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() }),
             redis.sadd(`user:${userId}:chats`, chatId),
             redis.ltrim(historyKey, -100, -1)
         ]);
