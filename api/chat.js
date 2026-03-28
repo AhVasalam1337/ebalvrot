@@ -1,27 +1,31 @@
-import { Redis } from '@upstash/redis';
-const redis = Redis.fromEnv();
+import { kv } from '@vercel/kv';
 import { getGeminiResponse } from '../methods.js';
-
 
 const DEFAULTS = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).end();
+    
     const { text, chatId, userId } = req.body;
-    if (!chatId || !userId) return res.status(400).json({ error: "Missing IDs" });
+    
+    if (!chatId || !userId) {
+        return res.status(400).json({ error: "Missing IDs" });
+    }
 
     try {
+        // Получаем правила и настройки через Vercel KV
         const [globalRules, settings] = await Promise.all([
-            redis.lrange('geminka:rules', 0, -1),
-            redis.hgetall(`user:${userId}:chat:${chatId}:settings`)
+            kv.lrange('geminka:rules', 0, -1),
+            kv.hgetall(`user:${userId}:chat:${chatId}:settings`)
         ]);
 
         const s = settings || DEFAULTS;
-        const h = Number(s.human || 5);
-        const l = Number(s.laconic || 5);
-        const e = Number(s.empathy || 5);
-        const limit = Number(s.contextLimit || 20);
+        const h = Number(s.human ?? 5);
+        const l = Number(s.laconic ?? 5);
+        const e = Number(s.empathy ?? 5);
+        const limit = Number(s.contextLimit ?? 20);
 
+        // Формируем системную инструкцию на основе ползунков
         const systemInstruction = `
             [PERSONALITY]
             - Slang/Informality: ${h}/10 (1=Robot, 10=Street slang, swear words if natural, "bro")
@@ -36,25 +40,36 @@ export default async function handler(req, res) {
         `.trim();
 
         const historyKey = `history:${chatId}`;
-        const rawH = await redis.lrange(historyKey, -(limit * 2), -1);
+        
+        // Загружаем историю (limit * 2, так как пара юзер-бот)
+        const rawH = await kv.lrange(historyKey, -(limit * 2), -1);
+        
         const formattedHistory = (rawH || []).map(item => {
             const p = typeof item === 'string' ? JSON.parse(item) : item;
-            return { role: p.role === 'user' ? 'user' : 'model', parts: [{ text: String(p.text || "") }] };
+            return { 
+                role: p.role === 'user' ? 'user' : 'model', 
+                parts: [{ text: String(p.text || "") }] 
+            };
         });
 
+        // Запрос к Gemini
         const aiResponse = await getGeminiResponse(systemInstruction, [
             ...formattedHistory,
             { role: "user", parts: [{ text: String(text) }] }
         ]);
 
+        // Сохраняем всё обратно в KV
         await Promise.all([
-            redis.rpush(historyKey, JSON.stringify({ role: "user", text })),
-            redis.rpush(historyKey, JSON.stringify({ role: "model", text: aiResponse })),
-            redis.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() }),
-            redis.sadd(`user:${userId}:chats`, chatId),
-            redis.ltrim(historyKey, -100, -1)
+            kv.rpush(historyKey, JSON.stringify({ role: "user", text })),
+            kv.rpush(historyKey, JSON.stringify({ role: "model", text: aiResponse })),
+            kv.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() }),
+            kv.sadd(`user:${userId}:chats`, chatId),
+            kv.ltrim(historyKey, -100, -1) // Ограничиваем общую длину истории в базе
         ]);
 
         return res.status(200).json({ text: aiResponse });
-    } catch (err) { return res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error("Chat API Error:", err);
+        return res.status(500).json({ error: err.message });
+    }
 }
