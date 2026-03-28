@@ -3,10 +3,13 @@ const input = document.getElementById('userInput');
 const sendBtn = document.getElementById('sendBtn');
 const chatNameDisplay = document.getElementById('chatNameDisplay');
 const menuContent = document.getElementById('menuContent');
-const modalOverlay = document.getElementById('modalOverlay');
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('overlay');
 
+// Инициализация ID пользователя и чата
 let userId = localStorage.getItem('pwa_user_id') || 'u_' + Math.random().toString(36).substr(2, 9);
 localStorage.setItem('pwa_user_id', userId);
+
 let currentChatId = localStorage.getItem('pwa_chat_id');
 let userSettings = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
 
@@ -19,7 +22,6 @@ function checkInput() {
     const text = input.value.trim();
     sendBtn.disabled = text.length === 0;
     sendBtn.style.opacity = text.length > 0 ? '1' : '0.5';
-    sendBtn.style.cursor = text.length > 0 ? 'pointer' : 'default';
 }
 
 function renderMessage(text, role, animate = false) {
@@ -32,7 +34,7 @@ function renderMessage(text, role, animate = false) {
     
     const avatar = role === 'bot' 
         ? `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full shrink-0">` 
-        : `<div class="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center font-bold shrink-0 text-xs">Я</div>`;
+        : `<div class="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center font-bold shrink-0 text-xs text-white">Я</div>`;
     
     container.innerHTML = avatar;
     container.appendChild(bubble);
@@ -40,7 +42,11 @@ function renderMessage(text, role, animate = false) {
     msgDiv.scrollTop = msgDiv.scrollHeight;
 }
 
+/**
+ * API WRAPPER
+ */
 async function api(action, method = 'GET', body = null) {
+    // Принудительно передаем текущие ID в URL, чтобы бэкенд всегда знал контекст
     const url = `/api/manage?action=${action}&userId=${userId}&chatId=${currentChatId}`;
     const options = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) options.body = JSON.stringify(body);
@@ -49,17 +55,19 @@ async function api(action, method = 'GET', body = null) {
 }
 
 /**
- * ОСНОВНАЯ ЛОГИКА
+ * ЛОГИКА ЧАТА
  */
 async function selectChat(id, name, isInitial = false) {
+    if (!id) return;
     currentChatId = id;
     localStorage.setItem('pwa_chat_id', id);
-    msgDiv.innerHTML = '<div class="p-10 text-center text-gray-600 animate-pulse text-xs uppercase tracking-widest">Загрузка истории...</div>';
+    
+    chatNameDisplay.innerText = name || "Загрузка...";
+    msgDiv.innerHTML = '<div class="p-10 text-center text-gray-600 animate-pulse text-xs uppercase tracking-widest">Синхронизация истории...</div>';
     
     try {
         const data = await api('chat');
         userSettings = data.settings || userSettings;
-        // Приоритет имени: из базы (meta) -> из аргумента -> "Чат"
         chatNameDisplay.innerText = data.meta?.name || name || "Чат";
         
         msgDiv.innerHTML = '';
@@ -69,24 +77,23 @@ async function selectChat(id, name, isInitial = false) {
                 if (text) renderMessage(text, m.role === 'user' ? 'user' : 'bot');
             });
         }
+        if (!data.history || data.history.length === 0) {
+            msgDiv.innerHTML = '<div class="p-10 text-center text-gray-700 text-[10px] uppercase tracking-[0.2em]">История пуста</div>';
+        }
     } catch (e) {
-        msgDiv.innerHTML = '<div class="p-10 text-center text-red-500 text-xs">ОШИБКА ЗАГРУЗКИ</div>';
+        msgDiv.innerHTML = '<div class="p-10 text-center text-red-500 text-xs">ОШИБКА ПОДКЛЮЧЕНИЯ</div>';
     }
     
     if (!isInitial && window.innerWidth < 1024) toggleMenu();
 }
 
-// Клик по заголовку для переименования
+// Переименование чата навсегда
 chatNameDisplay.onclick = async () => {
     const oldName = chatNameDisplay.innerText;
-    const newName = prompt("Введите новое название чата:", oldName);
+    const newName = prompt("Новое название чата:", oldName);
     if (newName && newName.trim() && newName !== oldName) {
         chatNameDisplay.innerText = newName.trim();
         await api('chat', 'POST', { name: newName.trim() });
-        // Если открыто меню диалогов, обновляем его для актуальности имен
-        if (!document.getElementById('sidebar').classList.contains('-translate-x-full')) {
-            renderMenu(STATES.DIALOGS);
-        }
     }
 };
 
@@ -107,25 +114,22 @@ async function handleSend() {
         const data = await res.json();
         if (data.text) renderMessage(data.text, 'bot', true);
     } catch (e) {
-        renderMessage("Ошибка связи с сервером.", "bot");
+        renderMessage("Ошибка: сервер не отвечает.", "bot");
     }
 }
 
 /**
- * МЕНЮ И НАВИГАЦИЯ
+ * НАВИГАЦИЯ И МЕНЮ
  */
 function toggleMenu() {
-    const s = document.getElementById('sidebar');
-    const o = document.getElementById('overlay');
-    const isOpen = s.classList.contains('translate-x-0');
-    
+    const isOpen = sidebar.classList.contains('translate-x-0');
     if (isOpen) {
-        s.classList.replace('translate-x-0', '-translate-x-full');
-        o.classList.add('hidden');
+        sidebar.classList.replace('translate-x-0', '-translate-x-full');
+        overlay.classList.add('hidden');
     } else {
         renderMenu(STATES.MAIN);
-        s.classList.replace('-translate-x-full', 'translate-x-0');
-        o.classList.remove('hidden');
+        sidebar.classList.replace('-translate-x-full', 'translate-x-0');
+        overlay.classList.remove('hidden');
     }
 }
 
@@ -141,8 +145,8 @@ function renderMenu(state) {
         ];
         items.forEach(item => {
             const d = document.createElement('div');
-            d.className = 'flex items-center gap-3 text-gray-300 p-4 hover:bg-white/5 rounded-xl cursor-pointer transition-colors active:scale-95';
-            d.innerHTML = `<span class="material-icons-outlined text-gray-500">${item.i}</span><span class="text-sm font-medium">${item.t}</span>`;
+            d.className = 'flex items-center gap-4 text-gray-300 p-4 hover:bg-white/5 rounded-2xl cursor-pointer transition-all active:scale-95';
+            d.innerHTML = `<span class="material-icons-outlined text-gray-500">${item.i}</span><span class="text-sm font-semibold">${item.t}</span>`;
             d.onclick = () => renderMenu(item.s);
             menuContent.appendChild(d);
         });
@@ -156,61 +160,53 @@ function renderMenu(state) {
 }
 
 async function syncDialogs() {
-    menuContent.innerHTML = '<div class="p-4 text-center text-xs text-gray-600 animate-pulse">ЗАГРУЗКА...</div>';
+    menuContent.innerHTML = '<div class="p-6 text-center text-xs text-gray-600 animate-pulse uppercase tracking-widest">Загрузка списка...</div>';
     try {
         const { list } = await api('list');
         menuContent.innerHTML = '';
 
         const addBtn = document.createElement('button');
-        addBtn.className = 'w-full p-3 mb-4 border border-dashed border-geminiAccent/30 text-geminiAccent text-[10px] font-black uppercase rounded-xl hover:bg-geminiAccent/5 transition-all';
-        addBtn.innerText = '+ Создать новый чат';
-addBtn.onclick = async () => {
+        addBtn.className = 'w-full p-4 mb-4 border border-dashed border-geminiAccent/40 text-geminiAccent text-[10px] font-black uppercase rounded-2xl hover:bg-geminiAccent/10 transition-all';
+        addBtn.innerText = '+ Создать новый диалог';
+        addBtn.onclick = async () => {
             const newId = 'c_' + Math.random().toString(36).substr(2, 9);
-            // Прямо указываем ID в URL запроса, чтобы не было путаницы
-            const url = `/api/manage?action=chat&userId=${userId}&chatId=${newId}`;
-            await fetch(url, {
+            // Принудительная инициализация в базе ПЕРЕД выбором
+            await fetch(`/api/manage?action=chat&userId=${userId}&chatId=${newId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: "Новый диалог" })
             });
-            currentChatId = newId;
             selectChat(newId, "Новый диалог");
         };
         menuContent.appendChild(addBtn);
 
-        if (!list || list.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'p-4 text-center text-xs text-gray-600';
-            empty.innerText = 'НЕТ ДИАЛОГОВ';
-            menuContent.appendChild(empty);
-        } else {
+        if (list && list.length > 0) {
             list.forEach(d => {
                 const el = document.createElement('div');
-                el.className = `p-3 mb-2 rounded-xl border transition-all ${d.id === currentChatId ? 'border-geminiAccent bg-geminiAccent/10' : 'border-gray-800 bg-gray-900/50'}`;
+                el.className = `p-4 mb-2 rounded-2xl border transition-all ${d.id === currentChatId ? 'border-geminiAccent bg-geminiAccent/10' : 'border-gray-800 bg-gray-900/50'}`;
                 el.innerHTML = `
                     <div class="flex justify-between items-center">
                         <span class="truncate cursor-pointer flex-1 text-sm ${d.id === currentChatId ? 'text-white font-bold' : 'text-gray-400'}" 
                               onclick="selectChat('${d.id}', '${d.name}')">${d.name}</span>
-                        <button onclick="deleteChat('${d.id}')" class="text-gray-600 hover:text-red-500 ml-2 text-lg px-2">×</button>
+                        <button onclick="deleteChat('${d.id}')" class="text-gray-600 hover:text-red-500 ml-3 text-xl">×</button>
                     </div>`;
                 menuContent.appendChild(el);
             });
         }
     } catch (e) {
-        menuContent.innerHTML = '<div class="p-4 text-red-500 text-xs">ОШИБКА СПИСКА</div>';
+        menuContent.innerHTML = '<div class="p-4 text-red-500 text-xs">Ошибка загрузки списка</div>';
     }
 }
 
 async function syncRules() {
-    menuContent.innerHTML = '<div class="p-4 text-center animate-pulse">Загрузка правил...</div>';
     const data = await api('rules');
     menuContent.innerHTML = '';
 
     const addWrap = document.createElement('div');
-    addWrap.className = 'mb-6 p-2 bg-white/5 rounded-xl';
+    addWrap.className = 'mb-6 p-3 bg-white/5 rounded-2xl border border-white/5';
     addWrap.innerHTML = `
-        <input id="newRuleInp" type="text" placeholder="Новое правило..." class="w-full bg-transparent p-2 text-sm text-white outline-none">
-        <button id="addRuleBtn" class="w-full mt-2 p-2 bg-geminiAccent text-black text-[10px] font-bold rounded-lg uppercase transition-transform active:scale-95">Добавить</button>
+        <input id="newRuleInp" type="text" placeholder="Установка..." class="w-full bg-transparent p-2 text-sm text-white outline-none">
+        <button id="addRuleBtn" class="w-full mt-3 p-3 bg-geminiAccent text-black text-[10px] font-black rounded-xl uppercase active:scale-95 transition-transform">Добавить в систему</button>
     `;
     menuContent.appendChild(addWrap);
 
@@ -226,13 +222,13 @@ async function syncRules() {
         }
     };
 
-    if (data.rules && data.rules.length > 0) {
+    if (data.rules) {
         data.rules.forEach(r => {
             const div = document.createElement('div');
-            div.className = 'flex justify-between items-start gap-2 p-3 mb-2 bg-gray-800/40 rounded-lg border border-gray-700';
+            div.className = 'flex justify-between items-start gap-3 p-4 mb-2 bg-gray-800/40 rounded-2xl border border-gray-700/50';
             div.innerHTML = `
-                <span class="text-xs text-gray-300 flex-1">${r.text}</span>
-                <button class="text-red-500 hover:scale-125 transition-transform text-lg px-1" onclick="deleteRule('${r.text.replace(/'/g, "\\'")}')">×</button>
+                <span class="text-xs text-gray-300 flex-1 leading-relaxed">${r.text}</span>
+                <button class="text-red-500 text-xl px-1" onclick="deleteRule('${r.text.replace(/'/g, "\\'")}')">×</button>
             `;
             menuContent.appendChild(div);
         });
@@ -240,18 +236,17 @@ async function syncRules() {
 }
 
 window.deleteRule = async (text) => {
-    if (confirm('Удалить это правило?')) {
+    if (confirm('Стереть это правило из системы?')) {
         await fetch(`/api/manage?action=rules&userId=${userId}&text=${encodeURIComponent(text)}`, { method: 'DELETE' });
         syncRules();
     }
 };
 
 window.deleteChat = async (id) => {
-    if (confirm('Удалить чат навсегда?')) {
-        const oldId = currentChatId;
-        currentChatId = id;
-        await api('chat', 'DELETE');
-        if (oldId === id) {
+    if (confirm('Удалить диалог безвозвратно?')) {
+        const targetId = id;
+        await fetch(`/api/manage?action=chat&userId=${userId}&chatId=${targetId}`, { method: 'DELETE' });
+        if (currentChatId === targetId) {
             localStorage.removeItem('pwa_chat_id');
             location.reload();
         } else {
@@ -267,21 +262,21 @@ function renderSettings() {
     ];
     fields.forEach(f => {
         const div = document.createElement('div');
-        div.className = 'mb-6';
+        div.className = 'mb-8';
         const val = userSettings[f.id] || 0;
         div.innerHTML = `
-            <div class="flex justify-between text-[10px] text-gray-500 uppercase font-black mb-2">
+            <div class="flex justify-between text-[10px] text-gray-500 uppercase font-black mb-3 tracking-widest">
                 <span>${f.n}</span>
                 <span id="v_${f.id}" class="text-geminiAccent">${val == 51 ? '∞' : val}</span>
             </div>
-            <input type="range" min="0" max="${f.max || 10}" value="${val}" class="w-full accent-geminiAccent h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer" 
+            <input type="range" min="0" max="${f.max || 10}" value="${val}" class="w-full accent-geminiAccent h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer" 
             oninput="userSettings['${f.id}']=parseInt(this.value); document.getElementById('v_${f.id}').innerText=(this.value == 51 ? '∞' : this.value)">`;
         menuContent.appendChild(div);
     });
 
     const save = document.createElement('button');
-    save.className = 'w-full p-4 bg-geminiAccent text-black font-black text-[10px] uppercase rounded-xl shadow-lg active:scale-95 transition-transform';
-    save.innerText = 'Применить настройки';
+    save.className = 'w-full p-5 bg-geminiAccent text-black font-black text-[10px] uppercase rounded-2xl shadow-xl active:scale-95 transition-transform mt-4';
+    save.innerText = 'Сохранить конфигурацию';
     save.onclick = async () => { 
         await api('chat', 'POST', { settings: userSettings }); 
         renderMenu(STATES.MAIN); 
@@ -289,22 +284,44 @@ function renderSettings() {
     menuContent.appendChild(save);
 }
 
-// ИНИЦИАЛИЗАЦИЯ
-document.addEventListener('DOMContentLoaded', () => {
+/**
+ * ЗАПУСК ПРИЛОЖЕНИЯ
+ */
+document.addEventListener('DOMContentLoaded', async () => {
+    // Слушатели событий
     input.addEventListener('input', checkInput);
     input.addEventListener('keydown', (e) => (e.key === 'Enter' && !e.shiftKey) ? (e.preventDefault(), handleSend()) : null);
-    
     document.getElementById('menuBtn').onclick = toggleMenu;
-    document.getElementById('overlay').onclick = toggleMenu;
+    overlay.onclick = toggleMenu;
     document.getElementById('backBtn').onclick = () => renderMenu(STATES.MAIN);
-    document.getElementById('sendBtn').onclick = handleSend;
+    sendBtn.onclick = handleSend;
 
-    if (!currentChatId) {
-        const tempId = 'c_' + Math.random().toString(36).substr(2, 9);
-        currentChatId = tempId;
-        api('chat', 'POST', { name: "Первый чат" }).then(() => selectChat(tempId, "Первый чат", true));
-    } else {
-        selectChat(currentChatId, chatNameDisplay.innerText, true);
+    try {
+        // 1. Спрашиваем список чатов у базы
+        const { list } = await api('list');
+        
+        // 2. Если есть чаты в базе, но в localStorage пусто — берем самый свежий
+        if (!currentChatId && list && list.length > 0) {
+            currentChatId = list[0].id;
+        }
+
+        // 3. Если чатов нет СОВСЕМ (даже в базе) — создаем первый
+        if (!currentChatId || (list && list.length === 0)) {
+            const firstId = 'c_' + Math.random().toString(36).substr(2, 9);
+            currentChatId = firstId;
+            await fetch(`/api/manage?action=chat&userId=${userId}&chatId=${firstId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: "Первый чат" })
+            });
+            await selectChat(firstId, "Первый чат", true);
+        } else {
+            // Загружаем текущий чат по ID
+            const activeChat = list.find(c => c.id === currentChatId) || list[0];
+            await selectChat(activeChat.id, activeChat.name, true);
+        }
+    } catch (e) {
+        console.error("Critical Start Error:", e);
     }
     
     checkInput();
