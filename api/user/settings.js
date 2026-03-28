@@ -1,31 +1,65 @@
 import { Redis } from '@upstash/redis';
+
 const redis = Redis.fromEnv();
 
 export default async function handler(req, res) {
+    // Извлекаем ID из параметров запроса
     const { userId, chatId } = req.query;
-    if (!userId || !chatId) return res.status(400).json({ error: "No IDs" });
 
-    // Уникальный ключ для настроек КОНКРЕТНОГО чата
-    const key = `user:${userId}:chat:${chatId}:settings`;
-
-    if (req.method === 'GET') {
-        const settings = await redis.hgetall(key);
-        // Если настроек нет, отдаем дефолт
-        return res.status(200).json(settings || { laconic: 5, empathy: 5, human: 5, contextLimit: 20 });
+    // Базовая проверка на наличие идентификаторов
+    if (!userId || !chatId) {
+        return res.status(400).json({ error: "Missing userId or chatId" });
     }
 
-    if (req.method === 'POST') {
-        const { settings } = req.body;
-        // Чистим данные перед сохранением, чтобы contextLimit был числом
-        const cleanSettings = {
-            laconic: parseInt(settings.laconic),
-            empathy: parseInt(settings.empathy),
-            human: parseInt(settings.human),
-            contextLimit: parseInt(settings.contextLimit)
-        };
-        await redis.hset(key, cleanSettings);
-        return res.status(200).json({ success: true });
-    }
+    // Тот самый ключ, по которому api/chat.js ищет настройки
+    const settingsKey = `user:${userId}:chat:${chatId}:settings`;
 
-    return res.status(405).end();
+    try {
+        // МЕТОД GET: Загрузка настроек для отображения в интерфейсе
+        if (req.method === 'GET') {
+            const data = await redis.hgetall(settingsKey);
+            
+            // Если в базе пусто, отдаем "заводские" настройки
+            if (!data) {
+                return res.status(200).json({
+                    laconic: 5,
+                    empathy: 5,
+                    human: 5,
+                    contextLimit: 20
+                });
+            }
+            
+            return res.status(200).json(data);
+        }
+
+        // МЕТОД POST: Сохранение настроек из меню конфигурации
+        if (req.method === 'POST') {
+            const { settings } = req.body;
+
+            if (!settings) {
+                return res.status(400).json({ error: "No settings provided" });
+            }
+
+            // Принудительно парсим в числа, чтобы Redis не хранил их как строки
+            // Это критично для логики "Золотой рыбки" (limit === 0)
+            const cleanSettings = {
+                laconic: parseInt(settings.laconic) || 5,
+                empathy: parseInt(settings.empathy) || 5,
+                human: parseInt(settings.human) || 5,
+                contextLimit: parseInt(settings.contextLimit)
+            };
+
+            // Сохраняем объект в Redis (Hash Set)
+            await redis.hset(settingsKey, cleanSettings);
+
+            return res.status(200).json({ success: true, saved: cleanSettings });
+        }
+
+        // Если пришел какой-то другой метод (напр. DELETE или PUT)
+        return res.status(405).json({ error: "Method not allowed" });
+
+    } catch (error) {
+        console.error("[SETTINGS ERROR]:", error);
+        return res.status(500).json({ error: "Internal Server Error", details: error.message });
+    }
 }
