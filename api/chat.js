@@ -7,33 +7,39 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).end();
     const { text, chatId, userId } = req.body;
 
+    // СТРОГАЯ ПРОВЕРКА: Если нет ID чата или юзера — стоп.
+    if (!chatId || !userId) return res.status(400).json({ error: "Missing ID" });
+
     try {
-        // 1. Загружаем настройки конкретного чата
-        const settings = await redis.hgetall(`user:${userId}:chat:${chatId}:settings`) || {
+        // 1. Ключ настроек: строго привязан к Юзеру И Чату
+        const settingsKey = `user:${userId}:chat:${chatId}:settings`;
+        const settings = await redis.hgetall(settingsKey) || {
             laconic: 5, empathy: 5, human: 5, contextLimit: 20
         };
 
         const limit = parseInt(settings.contextLimit);
 
-        // 2. ЖЕСТКАЯ ПРОВЕРКА КОНТЕКСТА
+        // 2. Ключ правил: сделаем их глобальными для юзера, но не для чата
+        // (Или чатовыми, если хочешь, чтобы в каждом чате были свои правила)
+        const rulesKey = `user:${userId}:rules`; 
+        const rules = await redis.lrange(rulesKey, 0, -1) || [];
+
+        // 3. Контекст: Только для этого chatId
         let history = [];
         if (limit > 0) {
-            // Если не рыбка, тянем историю
             const range = limit >= 51 ? 0 : -(limit * 2);
             const rawHistory = await redis.lrange(`history:${chatId}`, range, -1) || [];
-            history = rawHistory.map(item => typeof item === 'string' ? JSON.parse(item) : item);
-        } 
-        // Если limit === 0, history остается [] — Бот физически не увидит прошлого.
+            history = rawHistory.map(item => JSON.parse(item));
+        }
 
         const systemInstruction = `
-        PERSONALITY: Laconic:${settings.laconic}, Empathy:${settings.empathy}, Human:${settings.human}
-        RULES: ${(await redis.lrange('geminka:rules', 0, -1) || []).join('\n')}
+        RULES: ${rules.join('\n')}
+        STYLE: Laconic:${settings.laconic}, Empathy:${settings.empathy}
         `;
 
-        // 3. Запрос к API (передаем пустую историю, если рыбка)
         const responseText = await getGeminiResponse(chatId, text, systemInstruction, history);
 
-        // 4. Сохранение (пишем в базу всегда, чтобы можно было выключить рыбку и увидеть историю)
+        // Пишем историю строго в этот chatId
         await redis.rpush(`history:${chatId}`, JSON.stringify({ role: 'user', text }));
         await redis.rpush(`history:${chatId}`, JSON.stringify({ role: 'model', text: responseText }));
 
