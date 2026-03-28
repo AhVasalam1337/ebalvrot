@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     }
 
     try {
-        // --- СПИСОК ЧАТОВ ---
+        // --- ПОЛУЧЕНИЕ СПИСКА ДИАЛОГОВ ---
         if (action === 'list') {
             const ids = await kv.smembers(`user:${userId}:chats`);
             if (!ids || ids.length === 0) return res.status(200).json({ list: [] });
@@ -22,14 +22,17 @@ export default async function handler(req, res) {
                 };
             }));
 
-            return res.status(200).json({ 
-                list: list.filter(i => i.id).sort((a, b) => b.updatedAt - a.updatedAt) 
-            });
+            // Сортируем: новые сверху
+            const sortedList = list
+                .filter(i => i.id)
+                .sort((a, b) => b.updatedAt - a.updatedAt);
+
+            return res.status(200).json({ list: sortedList });
         }
 
-        // --- УПРАВЛЕНИЕ ЧАТОМ ---
+        // --- УПРАВЛЕНИЕ КОНКРЕТНЫМ ЧАТОМ ---
         if (action === 'chat') {
-            if (!chatId) return res.status(400).json({ error: "No chatId" });
+            if (!chatId) return res.status(400).json({ error: "Missing chatId" });
 
             if (method === 'GET') {
                 const [history, settings, meta] = await Promise.all([
@@ -37,7 +40,10 @@ export default async function handler(req, res) {
                     kv.hgetall(`user:${userId}:chat:${chatId}:settings`),
                     kv.hgetall(`chat:${chatId}:meta`)
                 ]);
+
+                // Гарантируем связь пользователя с этим чатом
                 await kv.sadd(`user:${userId}:chats`, chatId);
+
                 return res.status(200).json({
                     history: history || [],
                     settings: settings || { laconic: 5, empathy: 5, human: 5, contextLimit: 20 },
@@ -47,8 +53,13 @@ export default async function handler(req, res) {
 
             if (method === 'POST') {
                 const { name, settings } = req.body || {};
-                if (name) await kv.hset(`chat:${chatId}:meta`, { name, updatedAt: Date.now() });
-                if (settings) await kv.hset(`user:${userId}:chat:${chatId}:settings`, settings);
+                if (name) {
+                    await kv.hset(`chat:${chatId}:meta`, { name, updatedAt: Date.now() });
+                }
+                if (settings) {
+                    await kv.hset(`user:${userId}:chat:${chatId}:settings`, settings);
+                }
+                // При любом обновлении добавляем в список чатов пользователя
                 await kv.sadd(`user:${userId}:chats`, chatId);
                 return res.status(200).json({ success: true });
             }
@@ -64,23 +75,30 @@ export default async function handler(req, res) {
             }
         }
 
-        // --- ПРАВИЛА ---
+        // --- СИСТЕМНЫЕ ПРАВИЛА ---
         if (action === 'rules') {
+            const rulesKey = 'geminka:rules';
             if (method === 'GET') {
-                const rules = await kv.lrange('geminka:rules', 0, -1);
+                const rules = await kv.lrange(rulesKey, 0, -1);
                 return res.status(200).json({ rules: (rules || []).map((r, i) => ({ id: i, text: r })) });
             }
             if (method === 'POST') {
-                await kv.rpush('geminka:rules', req.body.text);
+                if (req.body.text) {
+                    await kv.rpush(rulesKey, req.body.text);
+                }
                 return res.status(200).json({ success: true });
             }
             if (method === 'DELETE') {
-                await kv.lrem('geminka:rules', 0, decodeURIComponent(text));
+                if (text) {
+                    await kv.lrem(rulesKey, 0, decodeURIComponent(text));
+                }
                 return res.status(200).json({ success: true });
             }
         }
+
         return res.status(405).end();
     } catch (e) {
+        console.error("KV Management Error:", e);
         return res.status(500).json({ error: e.message });
     }
 }
