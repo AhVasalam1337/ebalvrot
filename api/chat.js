@@ -8,43 +8,41 @@ export default async function handler(req, res) {
     const { text, chatId, userId } = req.body;
 
     try {
-        // 1. Загружаем настройки характера и лимит контекста
         const settings = await redis.hgetall(`user:${userId}:settings`) || {
             laconic: 5, empathy: 5, human: 5, contextLimit: 20
         };
 
-        // 2. Формируем инструкцию по характеру
-        const personality = `
-        STYLE SETTINGS:
-        - Laconic (0-10): ${settings.laconic} (Shortness of speech)
-        - Empathy (0-10): ${settings.empathy} (Emotional support)
-        - Humanity (0-10): ${settings.human} (Natural/Informal language)
+        // УСИЛЕННЫЙ СИСТЕМНЫЙ ПРОМПТ
+        const systemInstruction = `
+        IMPORTANT: Act according to these personality weights (0-10):
+        - LACONICISM: ${settings.laconic} (Higher = shorter, more direct answers)
+        - EMPATHY: ${settings.empathy} (Higher = more supportive, caring, emotional)
+        - HUMANITY: ${settings.human} (Higher = use informal language, slang, humor, be like a real person)
+        
+        GLOBAL RULES:
+        ${(await redis.lrange('geminka:rules', 0, -1) || []).join('\n')}
         `;
 
-        // 3. Загружаем правила
-        const rulesArray = await redis.lrange('geminka:rules', 0, -1) || [];
-        const rulesText = rulesArray.length > 0 ? "\nCORE RULES:\n" + rulesArray.join('\n') : "";
+        // ЛОГИКА КОНТЕКСТА (ЗОЛОТАЯ РЫБКА / БЕСКОНЕЧНОСТЬ)
+        const limit = parseInt(settings.contextLimit);
+        let history = [];
 
-        // 4. Получаем историю с учетом лимита (contextLimit)
-        const limit = parseInt(settings.contextLimit) || 20;
-        const rawHistory = await redis.lrange(`history:${chatId}`, -limit, -1) || [];
+        if (limit === 0) {
+            history = []; // Золотая рыбка - истории нет
+        } else if (limit >= 51) {
+            history = await redis.lrange(`history:${chatId}`, 0, -1) || []; // Бесконечность - всё
+        } else {
+            history = await redis.lrange(`history:${chatId}`, -limit, -1) || []; // Лимит
+        }
 
-        // 5. Итоговый системный промпт
-        const systemInstruction = personality + rulesText;
+        const responseText = await getGeminiResponse(chatId, text, systemInstruction, history);
 
-        // 6. Запрос к нейронке
-        const responseText = await getGeminiResponse(chatId, text, systemInstruction, rawHistory);
-
-        // 7. Сохранение истории
         await redis.rpush(`history:${chatId}`, JSON.stringify({ role: 'user', text }));
         await redis.rpush(`history:${chatId}`, JSON.stringify({ role: 'model', text: responseText }));
-        
-        // Обновление меты (время и имя если это первый месседж)
         await redis.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() });
 
         return res.status(200).json({ text: responseText });
     } catch (e) {
-        console.error(e);
         return res.status(500).json({ error: e.message });
     }
 }
