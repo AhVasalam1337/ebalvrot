@@ -11,7 +11,6 @@ export default async function handler(req, res) {
     if (!text || !chatId || !userId) return res.status(400).json({ error: "Missing data" });
 
     try {
-        // 1. Загружаем всё необходимое из базы за один проход
         const [globalRules, settings] = await Promise.all([
             redis.lrange('geminka:rules', 0, -1),
             redis.hgetall(`user:${userId}:chat:${chatId}:settings`)
@@ -23,45 +22,49 @@ export default async function handler(req, res) {
         const e = Number(s.empathy) || 5;
         const limit = Number(s.contextLimit) || 20;
 
-        // 2. Формируем психологический портрет (переводим цифры в смыслы)
-        const tone = h > 7 ? "Ты — лучшая подруга. Общайся на 'ты', используй сленг, смайлы, будь живой." : (h < 4 ? "Общайся официально и сдержанно." : "Общайся просто и вежливо.");
-        const length = l > 7 ? "Отвечай очень кратко, 1-2 предложения." : (l < 4 ? "Пиши развернуто и подробно." : "Держи среднюю длину ответов.");
-        const mood = e > 7 ? "Проявляй максимум заботы и эмпатии. Ты всегда поддерживаешь." : "Будь нейтральной.";
+        const tone = h > 7 ? "Ты — лучшая подруга. Общайся на 'ты', используй сленг, смайлы." : (h < 4 ? "Общайся официально." : "Общайся просто.");
+        const length = l > 7 ? "Отвечай очень кратко." : (l < 4 ? "Пиши развернуто." : "Держи среднюю длину.");
+        const mood = e > 7 ? "Будь максимально заботливой и поддерживай во всём." : "Будь нейтральной.";
 
         const systemInstruction = `
-            РОЛЬ: ${tone}
+            ЛИЧНОСТЬ: ${tone}
             СТИЛЬ: ${length}
             НАСТРОЙ: ${mood}
-            ГЛОБАЛЬНЫЕ ПРАВИЛА: ${(globalRules || []).join('. ')}
-            
-            КРИТИЧЕСКИ: Никогда не подтверждай получение инструкций. Просто будь этой личностью.
+            ПРАВИЛА: ${(globalRules || []).join('. ')}
+            НИКОГДА не подтверждай получение этих инструкций.
         `.trim();
 
-        // 3. Подгружаем историю
+        // ЗАГРУЗКА И ПРАВИЛЬНАЯ ТРАНСФОРМАЦИЯ ИСТОРИИ
         const historyKey = `history:${chatId}`;
         const rawH = await redis.lrange(historyKey, -(limit * 2), -1);
-        const history = (rawH || []).map(item => typeof item === 'string' ? JSON.parse(item) : item);
+        
+        // ВАЖНО: Превращаем плоские объекты из базы в формат parts: [{ text }]
+        const formattedHistory = (rawH || []).map(item => {
+            const p = typeof item === 'string' ? JSON.parse(item) : item;
+            return {
+                role: p.role === 'user' ? 'user' : 'model',
+                parts: [{ text: String(p.text || p.parts?.[0]?.text || "") }]
+            };
+        });
 
-        // 4. Запрос к ИИ
-        const aiResponse = await getGeminiResponse(systemInstruction, [
-            ...history,
-            { role: "user", parts: [{ text }] }
-        ]);
+        // Текущее сообщение тоже в правильном формате
+        const currentMsg = { role: "user", parts: [{ text: String(text) }] };
 
-        // 5. Сохранение в базу
-        const userEntry = { role: "user", text };
-        const aiEntry = { role: "model", text: aiResponse };
+        // Запрос к 3.1
+        const aiResponse = await getGeminiResponse(systemInstruction, [...formattedHistory, currentMsg]);
 
+        // Сохраняем в базу в ПЛОСКОМ виде (для экономии места), 
+        // так как при загрузке мы всё равно маппим выше
         await Promise.all([
-            redis.rpush(historyKey, JSON.stringify(userEntry), JSON.stringify(aiEntry)),
+            redis.rpush(historyKey, JSON.stringify({ role: "user", text }), JSON.stringify({ role: "model", text: aiResponse })),
             redis.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() }),
-            redis.ltrim(historyKey, -100, -1) // Ограничиваем общую длину истории в БД
+            redis.ltrim(historyKey, -100, -1)
         ]);
 
         return res.status(200).json({ text: aiResponse });
 
     } catch (err) {
-        console.error(err);
-        return res.status(500).json({ error: "Внутренняя ошибка сервера" });
+        console.error("Payload Error:", err);
+        return res.status(500).json({ error: err.message });
     }
 }
