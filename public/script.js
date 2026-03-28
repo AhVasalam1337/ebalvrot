@@ -47,22 +47,23 @@ function checkInput() {
 /**
  * РАБОТА С НАСТРОЙКАМИ
  */
+// Вставь это в свой script.js взамен старой функции
 async function loadChatSettings(chatId) {
     try {
         const res = await fetch(`/api/user/settings?userId=${userId}&chatId=${chatId}`);
         const data = await res.json();
-        if (data && !data.error) {
-            userSettings = {
-                laconic: parseInt(data.laconic) || 5,
-                empathy: parseInt(data.empathy) || 5,
-                human: parseInt(data.human) || 5,
-                contextLimit: parseInt(data.contextLimit) || 0
-            };
-        } else {
-            userSettings = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
-        }
+        
+        // Принудительно превращаем всё в числа, чтобы логика (limit > 0) не ломалась
+        userSettings = {
+            laconic: parseInt(data.laconic) ?? 5,
+            empathy: parseInt(data.empathy) ?? 5,
+            human: parseInt(data.human) ?? 5,
+            contextLimit: parseInt(data.contextLimit) ?? 20
+        };
+        
+        console.log(`Настройки для ${chatId} загружены:`, userSettings);
     } catch (e) {
-        console.error("Ошибка загрузки настроек чата");
+        console.error("Ошибка загрузки настроек");
     }
 }
 
