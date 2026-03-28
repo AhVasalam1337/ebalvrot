@@ -4,49 +4,35 @@ import { getGeminiResponse } from '../methods.js';
 const redis = Redis.fromEnv();
 
 export default async function handler(req, res) {
-    // Настройка заголовков для работы с PWA
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
-    // Vercel автоматически парсит JSON, если пришел заголовок application/json
     const { text, chatId } = req.body;
-    
-    // В PWA мы используем chatId как идентификатор пользователя для простоты
     const userId = chatId; 
 
-    if (!text || !chatId) {
-        return res.status(400).json({ error: "Missing text or chatId" });
-    }
-
     try {
-        // 1. СОХРАНЯЕМ СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ В REDIS
-        const userMsg = { role: 'user', text: text, timestamp: Date.now() };
-        await redis.rpush(`history:${chatId}`, JSON.stringify(userMsg));
+        // 1. ЗАГРУЖАЕМ ПРАВИЛА ИЗ REDIS
+        const rulesArray = await redis.lrange('geminka:rules', 0, -1);
+        const rulesPrompt = rulesArray.length > 0 
+            ? "\n\nСТРОГИЕ ПРАВИЛА ДЛЯ ТЕБЯ:\n" + rulesArray.join('\n') 
+            : "";
 
-        // 2. РЕГИСТРИРУЕМ ЧАТ В СПИСКЕ ДИАЛОГОВ (чтобы dialogs.js его видел)
+        // 2. ФОРМИРУЕМ ПОЛНЫЙ ПРОМПТ ДЛЯ METHODS.JS
+        // Мы склеиваем текущий текст сообщения с правилами, чтобы Gemini их увидела
+        const promptWithRules = text + rulesPrompt;
+
+        // 3. СОХРАНЯЕМ В ИСТОРИЮ (ТОЛЬКО ЧИСТЫЙ ТЕКСТ ПОЛЬЗОВАТЕЛЯ)
+        await redis.rpush(`history:${chatId}`, JSON.stringify({ role: 'user', text: text }));
         await redis.sadd(`user:${userId}:chats`, chatId);
-        await redis.hset(`chat:${chatId}:meta`, { 
-            updatedAt: Date.now(),
-            lastSnippet: text.substring(0, 30)
-        });
 
-        // 3. ПОЛУЧАЕМ ОТВЕТ ОТ GEMINI
-        // Передаем историю, если твой methods.js умеет её обрабатывать
-        const responseText = await getGeminiResponse(chatId, text);
+        // 4. ЗАПРОС К GEMINI (Передаем текст с вклеенными правилами)
+        const responseText = await getGeminiResponse(chatId, promptWithRules);
 
-        // 4. СОХРАНЯЕМ ОТВЕТ БОТА В REDIS
-        const botMsg = { role: 'model', text: responseText, timestamp: Date.now() };
-        await redis.rpush(`history:${chatId}`, JSON.stringify(botMsg));
+        // 5. СОХРАНЯЕМ ОТВЕТ БОТА
+        await redis.rpush(`history:${chatId}`, JSON.stringify({ role: 'model', text: responseText }));
 
-        // 5. ВОЗВРАЩАЕМ ОТВЕТ НА ФРОНТЕНД
         return res.status(200).json({ text: responseText });
 
     } catch (e) {
-        console.error("Chat Error:", e);
         return res.status(500).json({ error: e.message });
     }
 }
