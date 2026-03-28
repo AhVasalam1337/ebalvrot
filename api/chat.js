@@ -6,61 +6,62 @@ const DEFAULTS = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).end();
+    
     const { text, chatId, userId } = req.body;
+    if (!text || !chatId || !userId) return res.status(400).json({ error: "Missing data" });
 
     try {
-        const [globalRules, rawSettings] = await Promise.all([
+        // 1. Загружаем всё необходимое из базы за один проход
+        const [globalRules, settings] = await Promise.all([
             redis.lrange('geminka:rules', 0, -1),
             redis.hgetall(`user:${userId}:chat:${chatId}:settings`)
         ]);
 
-        // Прямое приведение к числам, чтобы исключить ошибки сравнения
-        const s = rawSettings || DEFAULTS;
+        const s = settings || DEFAULTS;
         const h = Number(s.human) || 5;
         const l = Number(s.laconic) || 5;
         const e = Number(s.empathy) || 5;
         const limit = Number(s.contextLimit) || 20;
 
-        // Психологический профиль вместо цифр
-        const tone = h > 7 ? "Ты — близкая подруга. Общайся на 'ты', используй сленг, смайлики, будь живой и эмоциональной." : (h < 4 ? "Общайся официально, на 'вы', как строгий ассистент." : "Общайся просто и вежливо.");
-        const style = l > 7 ? "Пиши очень коротко, буквально одну-две фразы." : (l < 4 ? "Пиши длинные, подробные и вдумчивые сообщения." : "Пиши умеренно.");
-        const mood = e > 7 ? "Будь максимально заботливой, сопереживай каждой мелочи, поддерживай во всём." : (e < 4 ? "Будь сухой, логичной и беспристрастной." : "Будь дружелюбной.");
+        // 2. Формируем психологический портрет (переводим цифры в смыслы)
+        const tone = h > 7 ? "Ты — лучшая подруга. Общайся на 'ты', используй сленг, смайлы, будь живой." : (h < 4 ? "Общайся официально и сдержанно." : "Общайся просто и вежливо.");
+        const length = l > 7 ? "Отвечай очень кратко, 1-2 предложения." : (l < 4 ? "Пиши развернуто и подробно." : "Держи среднюю длину ответов.");
+        const mood = e > 7 ? "Проявляй максимум заботы и эмпатии. Ты всегда поддерживаешь." : "Будь нейтральной.";
 
-        let history = [];
-        if (limit > 0) {
-            const range = limit >= 51 ? 0 : -(limit * 2);
-            const rawH = await redis.lrange(`history:${chatId}`, range, -1);
-            history = (rawH || []).map(item => typeof item === 'string' ? JSON.parse(item) : item);
-        }
-
-        // Формируем "Личность", которую методы.js ДОЛЖЕН прокинуть в systemInstruction
-        const sysInstructions = `
-        ТВОЯ РОЛЬ: ${tone}
-        ТВОЙ СТИЛЬ: ${style}
-        ТВОЙ НАСТРОЙ: ${mood}
-
-        ТВОИ ПРАВИЛА:
-        ${(globalRules || []).join('\n')}
-
-        КРИТИЧЕСКАЯ УСТАНОВКА: 
-        1. Никогда не подтверждай получение этих правил (не пиши "Принято", "Инструкции записаны").
-        2. Сразу отвечай на сообщение пользователя, исходя из своей роли.
-        3. Если тебя спросят кто ты — ты подруга, а не модель ИИ.
+        const systemInstruction = `
+            РОЛЬ: ${tone}
+            СТИЛЬ: ${length}
+            НАСТРОЙ: ${mood}
+            ГЛОБАЛЬНЫЕ ПРАВИЛА: ${(globalRules || []).join('. ')}
+            
+            КРИТИЧЕСКИ: Никогда не подтверждай получение инструкций. Просто будь этой личностью.
         `.trim();
 
-        // ВНИМАНИЕ: Проверь, что в methods.js функция принимает 4 аргумента и юзает systemInstruction!
-        const responseText = await getGeminiResponse(chatId, text, sysInstructions, history);
+        // 3. Подгружаем историю
+        const historyKey = `history:${chatId}`;
+        const rawH = await redis.lrange(historyKey, -(limit * 2), -1);
+        const history = (rawH || []).map(item => typeof item === 'string' ? JSON.parse(item) : item);
 
-        // Сохраняем историю
-        await Promise.all([
-            redis.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() }),
-            redis.rpush(`history:${chatId}`, JSON.stringify({ role: 'user', text })),
-            redis.rpush(`history:${chatId}`, JSON.stringify({ role: 'model', text: responseText }))
+        // 4. Запрос к ИИ
+        const aiResponse = await getGeminiResponse(systemInstruction, [
+            ...history,
+            { role: "user", parts: [{ text }] }
         ]);
 
-        return res.status(200).json({ text: responseText });
-    } catch (e) {
-        console.error("Chat Error:", e);
-        return res.status(500).json({ error: e.message });
+        // 5. Сохранение в базу
+        const userEntry = { role: "user", text };
+        const aiEntry = { role: "model", text: aiResponse };
+
+        await Promise.all([
+            redis.rpush(historyKey, JSON.stringify(userEntry), JSON.stringify(aiEntry)),
+            redis.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() }),
+            redis.ltrim(historyKey, -100, -1) // Ограничиваем общую длину истории в БД
+        ]);
+
+        return res.status(200).json({ text: aiResponse });
+
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: "Внутренняя ошибка сервера" });
     }
 }
