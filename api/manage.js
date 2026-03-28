@@ -7,7 +7,6 @@ export default async function handler(req, res) {
     const { action, userId, chatId } = req.query;
 
     try {
-        // --- УПРАВЛЕНИЕ ГЛОБАЛЬНЫМИ ПРАВИЛАМИ ---
         if (action === 'rules') {
             const key = 'geminka:rules';
             if (method === 'GET') {
@@ -24,7 +23,6 @@ export default async function handler(req, res) {
             }
         }
 
-        // --- УПРАВЛЕНИЕ КОНКРЕТНЫМ ЧАТОМ ---
         if (action === 'chat') {
             const settingsKey = `user:${userId}:chat:${chatId}:settings`;
             const metaKey = `chat:${chatId}:meta`;
@@ -36,7 +34,7 @@ export default async function handler(req, res) {
                     redis.hgetall(metaKey)
                 ]);
 
-                // Принудительный парсинг для фронтенда, чтобы история не пропадала
+                // Гарантируем, что история — это массив объектов, а не пустой null
                 const history = (rawHistory || []).map(item => {
                     try {
                         return typeof item === 'string' ? JSON.parse(item) : item;
@@ -45,25 +43,32 @@ export default async function handler(req, res) {
                     }
                 });
 
+                // Возвращаем всегда валидный объект, даже если данных в Redis нет
                 return res.status(200).json({ 
-                    history, 
+                    history: history || [], 
                     settings: settings || DEFAULTS, 
-                    meta: meta || { name: "Новый диалог" } 
+                    meta: meta || { name: "Новый диалог" }
                 });
             }
 
             if (method === 'POST') {
                 const { name, settings } = req.body;
                 if (name) await redis.hset(metaKey, { name, updatedAt: Date.now() });
-                if (settings) await redis.hset(settingsKey, settings);
-                
-                // Фиксируем чат в списке чатов пользователя
+                if (settings) {
+                    // Принудительно чистим настройки перед сохранением
+                    const cleanSettings = {
+                        human: settings.human || 5,
+                        laconic: settings.laconic || 5,
+                        empathy: settings.empathy || 5,
+                        contextLimit: settings.contextLimit || 20
+                    };
+                    await redis.hset(settingsKey, cleanSettings);
+                }
                 await redis.sadd(`user:${userId}:chats`, chatId);
                 return res.status(200).json({ success: true });
             }
         }
 
-        // --- СПИСОК ВСЕХ ДИАЛОГОВ ---
         if (action === 'list') {
             const ids = await redis.smembers(`user:${userId}:chats`);
             if (!ids || ids.length === 0) return res.status(200).json({ list: [] });
@@ -77,13 +82,12 @@ export default async function handler(req, res) {
                 };
             }));
 
-            // Сортировка: новые сверху
             return res.status(200).json({ list: list.sort((a, b) => b.updatedAt - a.updatedAt) });
         }
 
         return res.status(405).end();
     } catch (e) {
-        console.error("Manage API Error:", e);
-        return res.status(500).json({ error: e.message });
+        console.error("Manage Error:", e);
+        return res.status(200).json({ history: [], settings: DEFAULTS, meta: {}, error: e.message });
     }
 }
