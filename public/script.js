@@ -371,7 +371,9 @@ async function syncRules() {
     if (data.rules) data.rules.forEach(r => {
         const d = document.createElement('div');
         d.className = 'p-3 bg-gray-800/40 rounded-xl mb-2 border border-gray-700/50 flex justify-between';
-        d.innerHTML = `<div class="text-[11px] text-gray-300 pr-2">${r.text}</div><button class="text-gray-400" onclick="deleteRule('${r.id}')">×</button>`;
+        // Внутри syncRules, где создается кнопка удаления:
+d.innerHTML = `<div class="text-[11px] text-gray-300 pr-2">${r.text}</div>
+               <button class="text-gray-600" onclick="deleteRule(\`${r.text}\`)">×</button>`;
         menuContent.appendChild(d);
     });
     const add = document.createElement('button');
