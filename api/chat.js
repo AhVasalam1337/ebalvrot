@@ -5,44 +5,66 @@ const redis = Redis.fromEnv();
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).end();
+    
+    // Вытаскиваем данные из тела запроса
     const { text, chatId, userId } = req.body;
 
-    try {
-        const settings = await redis.hgetall(`user:${userId}:settings`) || {
-            laconic: 5, empathy: 5, human: 5, contextLimit: 20
-        };
+    if (!chatId || !userId) {
+        return res.status(400).json({ error: "Missing chatId or userId" });
+    }
 
-        // УСИЛЕННЫЙ СИСТЕМНЫЙ ПРОМПТ
+    try {
+        // 1. Пытаемся загрузить настройки КОНКРЕТНОГО чата
+        // Ключ: user:{userId}:chat:{chatId}:settings
+        let settings = await redis.hgetall(`user:${userId}:chat:${chatId}:settings`);
+        
+        // Если настроек нет (новый чат), ставим дефолт
+        if (!settings) {
+            settings = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
+        }
+
+        // 2. Формируем инструкцию на основе актуальных настроек
         const systemInstruction = `
-        IMPORTANT: Act according to these personality weights (0-10):
-        - LACONICISM: ${settings.laconic} (Higher = shorter, more direct answers)
-        - EMPATHY: ${settings.empathy} (Higher = more supportive, caring, emotional)
-        - HUMANITY: ${settings.human} (Higher = use informal language, slang, humor, be like a real person)
+        CURRENT CHAT CONSTRAINTS:
+        - LACONICISM: ${settings.laconic}/10
+        - EMPATHY: ${settings.empathy}/10
+        - HUMANITY: ${settings.human}/10
         
         GLOBAL RULES:
         ${(await redis.lrange('geminka:rules', 0, -1) || []).join('\n')}
         `;
 
-        // ЛОГИКА КОНТЕКСТА (ЗОЛОТАЯ РЫБКА / БЕСКОНЕЧНОСТЬ)
+        // 3. СТРОГАЯ ЛОГИКА КОНТЕКСТА (Золотая рыбка живет здесь)
         const limit = parseInt(settings.contextLimit);
         let history = [];
 
         if (limit === 0) {
-            history = []; // Золотая рыбка - истории нет
+            // РЕЖИМ ЗОЛОТОЙ РЫБКИ: История пуста, Gemini видит только текущее сообщение
+            history = []; 
         } else if (limit >= 51) {
-            history = await redis.lrange(`history:${chatId}`, 0, -1) || []; // Бесконечность - всё
+            // БЕСКОНЕЧНОСТЬ: Грузим всё
+            history = await redis.lrange(`history:${chatId}`, 0, -1) || [];
         } else {
-            history = await redis.lrange(`history:${chatId}`, -limit, -1) || []; // Лимит
+            // ЛИМИТ: Берем последние N сообщений
+            // Redis lrange берет индексы, каждое сообщение - это 1 роль (user/model)
+            // Чтобы получить 20 "диалогов", нужно взять 40 записей
+            history = await redis.lrange(`history:${chatId}`, -(limit * 2), -1) || [];
         }
 
-        const responseText = await getGeminiResponse(chatId, text, systemInstruction, history);
+        // Парсим историю из JSON строк
+        const parsedHistory = history.map(item => typeof item === 'string' ? JSON.parse(item) : item);
 
+        // 4. Запрос к нейронке
+        const responseText = await getGeminiResponse(chatId, text, systemInstruction, parsedHistory);
+
+        // 5. Сохраняем в базу (даже если рыбка включена, пишем для логов и будущего)
         await redis.rpush(`history:${chatId}`, JSON.stringify({ role: 'user', text }));
         await redis.rpush(`history:${chatId}`, JSON.stringify({ role: 'model', text: responseText }));
-        await redis.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() });
-
+        
         return res.status(200).json({ text: responseText });
+
     } catch (e) {
-        return res.status(500).json({ error: e.message });
+        console.error("API ERROR:", e);
+        return res.status(500).json({ error: "Internal Server Error", details: e.message });
     }
 }
