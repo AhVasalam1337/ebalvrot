@@ -2,14 +2,19 @@ import { Redis } from '@upstash/redis';
 const redis = Redis.fromEnv();
 
 export default async function handler(req, res) {
-    const { userId } = req.query;
+    const { userId, chatId } = req.query;
+    const key = `user:${userId}:chat:${chatId}:settings`;
+
     if (req.method === 'GET') {
-        const s = await redis.hgetall(`user:${userId}:settings`);
-        return res.status(200).json(s || { laconic: 5, empathy: 5, human: 5, contextLimit: 20 });
+        const settings = await redis.hgetall(key);
+        return res.status(200).json(settings || { laconic: 5, empathy: 5, human: 5, contextLimit: 20 });
     }
+
     if (req.method === 'POST') {
         const { settings } = req.body;
-        await redis.hset(`user:${userId}:settings`, settings);
+        await redis.hset(key, settings);
         return res.status(200).json({ success: true });
     }
+
+    return res.status(405).end();
 }
