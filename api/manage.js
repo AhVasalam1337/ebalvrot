@@ -4,13 +4,12 @@ const redis = Redis.fromEnv();
 const DEFAULTS = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
 
 export default async function handler(req, res) {
-    const { method, query: { action, userId, chatId } } = req;
+    const { method, query: { action, userId, chatId, text } } = req;
 
     try {
-        // 1. УПРАВЛЕНИЕ ДИАЛОГАМИ И ИСТОРИЕЙ
+        // УПРАВЛЕНИЕ КОНКРЕТНЫМ ЧАТОМ (История + Настройки + Мета)
         if (action === 'chat') {
             if (method === 'GET') {
-                // Загружаем ВСЁ за один раз: историю, настройки и мету
                 const [rawHistory, settings, meta] = await Promise.all([
                     redis.lrange(`history:${chatId}`, 0, 100),
                     redis.hgetall(`user:${userId}:chat:${chatId}:settings`),
@@ -37,30 +36,30 @@ export default async function handler(req, res) {
             }
         }
 
-        // 2. СПИСОК ЧАТОВ
+        // СПИСОК ВСЕХ ДИАЛОГОВ
         if (action === 'list') {
-            const chatIds = await redis.smembers(`user:${userId}:chats`);
-            if (!chatIds.length) return res.status(200).json({ list: [] });
-            const list = await Promise.all(chatIds.map(async (id) => {
+            const ids = await redis.smembers(`user:${userId}:chats`);
+            if (!ids.length) return res.status(200).json({ list: [] });
+            const list = await Promise.all(ids.map(async (id) => {
                 const meta = await redis.hgetall(`chat:${id}:meta`);
-                return { id, name: meta?.name || "Чат", updatedAt: parseInt(meta?.updatedAt) || 0 };
+                return { id, name: meta?.name || "Новый чат", updatedAt: parseInt(meta?.updatedAt) || 0 };
             }));
             return res.status(200).json({ list: list.sort((a, b) => b.updatedAt - a.updatedAt) });
         }
 
-        // 3. ПРАВИЛА
+        // ГЛОБАЛЬНЫЕ ПРАВИЛА
         if (action === 'rules') {
             const key = 'geminka:rules';
             if (method === 'GET') {
-                const rules = await redis.lrange(key, 0, -1);
-                return res.status(200).json({ rules: (rules || []).map((r, i) => ({ id: i, text: r })) });
+                const r = await redis.lrange(key, 0, -1);
+                return res.status(200).json({ rules: (r || []).map((t, i) => ({ id: i, text: t })) });
             }
             if (method === 'POST') {
                 await redis.rpush(key, req.body.text.trim());
                 return res.status(200).json({ success: true });
             }
             if (method === 'DELETE') {
-                await redis.lrem(key, 0, req.query.text);
+                await redis.lrem(key, 0, text);
                 return res.status(200).json({ success: true });
             }
         }
