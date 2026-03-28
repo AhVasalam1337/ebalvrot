@@ -7,13 +7,10 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).end();
     
     const { text, chatId, userId } = req.body;
-    
-    if (!chatId || !userId) {
-        return res.status(400).json({ error: "Missing IDs" });
-    }
+    if (!chatId || !userId) return res.status(400).json({ error: "Missing IDs" });
 
     try {
-        // Получаем правила и настройки через Vercel KV
+        // Загружаем правила и настройки
         const [globalRules, settings] = await Promise.all([
             kv.lrange('geminka:rules', 0, -1),
             kv.hgetall(`user:${userId}:chat:${chatId}:settings`)
@@ -25,7 +22,7 @@ export default async function handler(req, res) {
         const e = Number(s.empathy ?? 5);
         const limit = Number(s.contextLimit ?? 20);
 
-        // Формируем системную инструкцию на основе ползунков
+        // Формируем промпт
         const systemInstruction = `
             [PERSONALITY]
             - Slang/Informality: ${h}/10 (1=Robot, 10=Street slang, swear words if natural, "bro")
@@ -41,9 +38,8 @@ export default async function handler(req, res) {
 
         const historyKey = `history:${chatId}`;
         
-        // Загружаем историю (limit * 2, так как пара юзер-бот)
+        // Получаем контекст (последние N сообщений)
         const rawH = await kv.lrange(historyKey, -(limit * 2), -1);
-        
         const formattedHistory = (rawH || []).map(item => {
             const p = typeof item === 'string' ? JSON.parse(item) : item;
             return { 
@@ -52,24 +48,24 @@ export default async function handler(req, res) {
             };
         });
 
-        // Запрос к Gemini
+        // Запрос к AI
         const aiResponse = await getGeminiResponse(systemInstruction, [
             ...formattedHistory,
             { role: "user", parts: [{ text: String(text) }] }
         ]);
 
-        // Сохраняем всё обратно в KV
+        // Атомарное обновление истории и метаданных
         await Promise.all([
             kv.rpush(historyKey, JSON.stringify({ role: "user", text })),
             kv.rpush(historyKey, JSON.stringify({ role: "model", text: aiResponse })),
             kv.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() }),
             kv.sadd(`user:${userId}:chats`, chatId),
-            kv.ltrim(historyKey, -100, -1) // Ограничиваем общую длину истории в базе
+            kv.ltrim(historyKey, -100, -1) // Храним не более 100 сообщений в сырой базе
         ]);
 
         return res.status(200).json({ text: aiResponse });
     } catch (err) {
-        console.error("Chat API Error:", err);
+        console.error("Chat Error:", err);
         return res.status(500).json({ error: err.message });
     }
 }
