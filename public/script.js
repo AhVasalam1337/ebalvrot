@@ -1,5 +1,5 @@
 /**
- * ПОЛНЫЙ КОРРЕКТНЫЙ SCRIPT.JS
+ * ГЛОБАЛЬНАЯ ИНИЦИАЛИЗАЦИЯ
  */
 const msgDiv = document.getElementById('chat-messages');
 const input = document.getElementById('userInput');
@@ -11,22 +11,71 @@ const menuContent = document.getElementById('menuContent');
 const menuTitle = document.getElementById('menuTitle');
 const backBtn = document.getElementById('backBtn');
 const chatNameDisplay = document.getElementById('chatNameDisplay');
+
 const modalOverlay = document.getElementById('modalOverlay');
 const modalTitle = document.getElementById('modalTitle');
 const modalBody = document.getElementById('modalBody');
 const modalSave = document.getElementById('modalSave');
 const modalCancel = document.getElementById('modalCancel');
 
+// Константы состояний
+const STATES = { MAIN: 'MAIN', DIALOGS: 'DIALOGS', RULES: 'RULES', SETTINGS: 'SETTINGS' };
+
+// Идентификаторы
 let userId = localStorage.getItem('pwa_user_id') || 'u_' + Math.random().toString(36).substr(2, 9);
 localStorage.setItem('pwa_user_id', userId);
 let currentChatId = localStorage.getItem('pwa_chat_id') || 'c_' + Math.random().toString(36).substr(2, 9);
 localStorage.setItem('pwa_chat_id', currentChatId);
 
-const STATES = { MAIN: 'MAIN', DIALOGS: 'DIALOGS', RULES: 'RULES', SETTINGS: 'SETTINGS' };
+/**
+ * ФУНКЦИИ ОТПРАВКИ (ЯДРО)
+ */
+async function handleSendMessage() {
+    const text = input.value.trim();
+    if (!text) return;
 
+    // Блокировка
+    sendBtn.disabled = true;
+    sendBtn.style.opacity = "0.5";
+    input.value = '';
+    input.style.height = 'auto';
+
+    renderMessage(text, 'user');
+    const lId = showLoading();
+
+    try {
+        const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, chatId: currentChatId, userId })
+        });
+        const data = await res.json();
+        
+        const loader = document.getElementById(lId);
+        if (loader) loader.remove();
+
+        if (data.text) {
+            renderMessage(data.text, 'bot');
+        } else {
+            renderMessage('Geminка молчит... Ошибка в ответе.', 'bot');
+        }
+    } catch (e) { 
+        const loader = document.getElementById(lId);
+        if (loader) loader.remove();
+        renderMessage('Ошибка сети. Проверь интернет.', 'bot'); 
+    } finally { 
+        sendBtn.disabled = false; 
+        sendBtn.style.opacity = "1";
+    }
+}
+
+/**
+ * РЕНДЕРИНГ МЕНЮ И ДИАЛОГОВ
+ */
 function renderMenu(state) {
     menuContent.innerHTML = '';
     backBtn.classList.remove('hidden');
+    
     switch(state) {
         case STATES.MAIN:
             menuTitle.innerText = 'Меню';
@@ -48,32 +97,33 @@ function renderMenu(state) {
         case STATES.SETTINGS:
             menuTitle.innerText = 'Настройки';
             backBtn.onclick = () => renderMenu(STATES.MAIN);
-            createMenuItem('psychology', 'Характер', openCharacterEditor);
             createMenuItem('edit', 'Переименовать чат', openRenameChat);
+            createMenuItem('delete_sweep', 'Очистить историю чата', () => {
+                if(confirm('Удалить все сообщения в этом чате?')) deleteChat(currentChatId);
+            }, 'text-red-400');
             break;
     }
 }
 
 function createMenuItem(icon, text, action, color = 'text-gray-300') {
     const div = document.createElement('div');
-    div.className = `flex items-center gap-3 ${color} p-3 hover:bg-gray-800 rounded-xl cursor-pointer active:scale-95 transition-all`;
+    div.className = `flex items-center gap-3 ${color} p-4 hover:bg-gray-800 rounded-xl cursor-pointer active:scale-95 transition-all mb-1`;
     div.innerHTML = `<span class="material-icons-outlined">${icon}</span><span class="text-sm font-medium">${text}</span>`;
     div.onclick = action;
     menuContent.appendChild(div);
 }
 
-// СИНХРОНИЗАЦИЯ ДИАЛОГОВ
 async function syncDialogs() {
-    menuContent.innerHTML = '<div class="text-center p-4 text-gray-500 animate-pulse text-[10px]">ЗАГРУЗКА...</div>';
+    menuContent.innerHTML = '<div class="p-4 text-center text-gray-500 text-[10px]">ЗАГРУЗКА...</div>';
     try {
         const res = await fetch(`/api/dialogs?userId=${userId}`);
         const data = await res.json();
         menuContent.innerHTML = '';
 
-        // КНОПКА: НОВЫЙ ДИАЛОГ (Теперь создает его в Redis сразу)
+        // Кнопка создания
         const nBtn = document.createElement('div');
-        nBtn.className = 'flex items-center gap-3 text-geminiAccent p-3 mb-4 bg-geminiAccent/10 border border-dashed border-geminiAccent/30 rounded-xl cursor-pointer hover:bg-geminiAccent/20';
-        nBtn.innerHTML = '<span class="material-icons-outlined">add_comment</span><span class="text-sm font-bold uppercase">Новый диалог</span>';
+        nBtn.className = 'flex items-center gap-3 text-geminiAccent p-4 mb-4 bg-geminiAccent/10 border border-dashed border-geminiAccent/30 rounded-xl cursor-pointer';
+        nBtn.innerHTML = '<span class="material-icons-outlined">add_comment</span><span class="text-sm font-bold uppercase">Новый чат</span>';
         nBtn.onclick = async () => {
             const newId = 'c_' + Math.random().toString(36).substr(2, 9);
             await fetch('/api/dialogs', {
@@ -85,21 +135,21 @@ async function syncDialogs() {
             localStorage.setItem('pwa_chat_id', currentChatId);
             chatNameDisplay.innerText = 'Новый чат';
             msgDiv.innerHTML = '';
-            renderMessage("Чат создан и сохранен. Жду твоего сообщения!", 'bot');
+            renderMessage("Новый диалог создан!", 'bot');
             toggleMenu();
         };
         menuContent.appendChild(nBtn);
 
-        if (data.list) {
+        if (data.list && data.list.length > 0) {
             data.list.forEach(d => {
                 const item = document.createElement('div');
-                item.className = `group flex items-center justify-between p-3 mb-2 rounded-xl border border-gray-700 cursor-pointer hover:bg-gray-800 ${d.id === currentChatId ? 'bg-geminiAccent/10 border-geminiAccent' : 'bg-gray-800/30'}`;
+                item.className = `group flex items-center justify-between p-3 mb-2 rounded-xl border border-gray-700 cursor-pointer ${d.id === currentChatId ? 'bg-geminiAccent/10 border-geminiAccent' : 'bg-gray-800/30'}`;
                 item.innerHTML = `
                     <div class="flex-1 truncate" onclick="selectChat('${d.id}', '${d.name}')">
                         <div class="text-sm font-bold text-white truncate">${d.name}</div>
                         <div class="text-[9px] text-gray-500 uppercase">${new Date(d.updatedAt).toLocaleDateString()}</div>
                     </div>
-                    <button class="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 p-2 transition-all" onclick="deleteChat('${d.id}')">
+                    <button class="text-gray-600 hover:text-red-400 p-2" onclick="event.stopPropagation(); deleteChat('${d.id}')">
                         <span class="material-icons-outlined text-sm">delete</span>
                     </button>
                 `;
@@ -109,28 +159,44 @@ async function syncDialogs() {
     } catch (e) { console.error(e); }
 }
 
+/**
+ * ГЛОБАЛЬНЫЕ МЕТОДЫ ДЛЯ ONCLICK
+ */
 window.selectChat = (id, name) => {
     currentChatId = id;
-    localStorage.setItem('pwa_chat_id', currentChatId);
+    localStorage.setItem('pwa_chat_id', id);
     chatNameDisplay.innerText = name;
     loadHistory(true);
     toggleMenu();
 };
 
 window.deleteChat = async (id) => {
-    if (confirm('Удалить этот диалог?')) {
-        await fetch(`/api/dialogs?userId=${userId}&chatId=${id}`, { method: 'DELETE' });
-        if (id === currentChatId) location.reload(); else syncDialogs();
+    if (!confirm('Удалить диалог?')) return;
+    await fetch(`/api/dialogs?userId=${userId}&chatId=${id}`, { method: 'DELETE' });
+    if (id === currentChatId) {
+        const newId = 'c_' + Math.random().toString(36).substr(2, 9);
+        currentChatId = newId;
+        localStorage.setItem('pwa_chat_id', newId);
+        location.reload();
+    } else {
+        syncDialogs();
     }
 };
 
-// ПРАВИЛА
+window.deleteRule = async (id) => {
+    await fetch(`/api/rules?id=${id}`, { method: 'DELETE' });
+    syncRules();
+};
+
+/**
+ * ПРАВИЛА И МОДАЛКИ
+ */
 async function syncRules() {
     menuContent.innerHTML = '';
     const res = await fetch('/api/rules');
     const data = await res.json();
     if (data.rules) {
-        data.rules.forEach((rule, idx) => {
+        data.rules.forEach(rule => {
             const div = document.createElement('div');
             div.className = 'flex items-start justify-between gap-2 p-3 bg-geminiBotMsg rounded-xl mb-2 border border-gray-800';
             div.innerHTML = `<div class="text-[12px] text-gray-300 flex-1 text-left">${rule.text}</div>
@@ -139,19 +205,14 @@ async function syncRules() {
         });
     }
     const addBtn = document.createElement('button');
-    addBtn.className = 'w-full p-3 mt-2 border border-dashed border-gray-700 rounded-xl text-gray-500 hover:text-geminiAccent text-[11px] font-bold';
+    addBtn.className = 'w-full p-3 mt-2 border border-dashed border-gray-700 rounded-xl text-gray-500 text-[11px] font-bold';
     addBtn.innerText = '+ ДОБАВИТЬ ПРАВИЛО';
     addBtn.onclick = openAddRule;
     menuContent.appendChild(addBtn);
 }
 
-window.deleteRule = async (id) => {
-    await fetch(`/api/rules?id=${id}`, { method: 'DELETE' });
-    syncRules();
-};
-
 function openAddRule() {
-    showModal('Новое правило', '<textarea id="modalInput" class="w-full h-24 bg-gray-800 border-gray-700 rounded-xl p-3 text-white text-sm"></textarea>', async () => {
+    showModal('Новое правило', '<textarea id="modalInput" class="w-full h-24 bg-gray-800 border-gray-700 rounded-xl p-3 text-white text-sm" placeholder="Например: Не используй смайлики."></textarea>', async () => {
         const text = document.getElementById('modalInput').value;
         if (!text) return;
         await fetch('/api/rules', {
@@ -164,9 +225,8 @@ function openAddRule() {
     });
 }
 
-// ПЕРЕИМЕНОВАНИЕ
 function openRenameChat() {
-    showModal('Переименовать чат', `<input id="modalInput" type="text" class="w-full bg-gray-800 border-gray-700 rounded-xl p-3 text-white" value="${chatNameDisplay.innerText}">`, async () => {
+    showModal('Переименовать', `<input id="modalInput" type="text" class="w-full bg-gray-800 border-gray-700 rounded-xl p-3 text-white" value="${chatNameDisplay.innerText}">`, async () => {
         const name = document.getElementById('modalInput').value;
         if (!name) return;
         await fetch('/api/chat/rename', {
@@ -180,58 +240,39 @@ function openRenameChat() {
     });
 }
 
-// ОТПРАВКА
-async function handleSendMessage() {
-    const text = input.value.trim();
-    if (!text) return;
-    sendBtn.disabled = true;
-    input.value = '';
-    renderMessage(text, 'user');
-    const lId = showLoading();
-    try {
-        const res = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, chatId: currentChatId, userId })
-        });
-        const data = await res.json();
-        document.getElementById(lId)?.remove();
-        if (data.text) renderMessage(data.text, 'bot');
-    } catch (e) { 
-        document.getElementById(lId)?.remove();
-        renderMessage('Ошибка.', 'bot'); 
-    } finally { sendBtn.disabled = false; }
-}
-
-// ИСТОРИЯ И ПРОЧЕЕ
-async function loadHistory(isFirst = false) {
-    if (isFirst) msgDiv.innerHTML = '';
-    const res = await fetch(`/api/history?chatId=${currentChatId}`);
-    const data = await res.json();
-    if (data.history) {
-        data.history.forEach(m => renderMessage(m.parts[0].text, m.role === 'user' ? 'user' : 'bot', false));
-    }
-    msgDiv.scrollTop = msgDiv.scrollHeight;
-}
-
+/**
+ * ВСПОМОГАТЕЛЬНЫЕ
+ */
 function renderMessage(text, role, anim = true) {
     const container = document.createElement('div');
-    container.className = `flex gap-3 items-start mb-4 ${role === 'user' ? 'flex-row-reverse' : ''}`;
-    const avatar = role === 'bot' ? `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full">` : `<div class="w-9 h-9 rounded-full bg-blue-700 flex items-center justify-center text-white text-[10px]">Я</div>`;
-    container.innerHTML = `${avatar}<div class="${role === 'bot' ? 'bg-geminiBotMsg border-gray-800' : 'bg-geminiUserMsg border-gray-700'} p-4 rounded-2xl max-w-[85%] text-[15px] text-white border text-left whitespace-pre-wrap">${text}</div>`;
+    container.className = `flex gap-3 items-start mb-5 ${role === 'user' ? 'flex-row-reverse' : ''}`;
+    const avatar = role === 'bot' ? `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full shrink-0">` : `<div class="w-9 h-9 rounded-full bg-blue-700 flex items-center justify-center text-white text-[10px] shrink-0 font-bold uppercase">Я</div>`;
+    container.innerHTML = `${avatar}<div class="${role === 'bot' ? 'bg-geminiBotMsg border-gray-800' : 'bg-geminiUserMsg border-gray-700'} p-4 rounded-2xl max-w-[85%] text-[15px] text-white border text-left whitespace-pre-wrap leading-relaxed shadow-sm">${text}</div>`;
     msgDiv.appendChild(container);
     msgDiv.scrollTop = msgDiv.scrollHeight;
 }
 
 function showLoading() {
-    const id = 'l'+Date.now();
+    const id = 'l' + Date.now();
     const div = document.createElement('div');
     div.id = id;
-    div.className = 'flex gap-3 mb-4';
-    div.innerHTML = `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full"><div class="bg-geminiBotMsg p-4 rounded-2xl border border-gray-800 flex gap-1"><div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div><div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.1s]"></div><div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]"></div></div>`;
+    div.className = 'flex gap-3 mb-5';
+    div.innerHTML = `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full shrink-0"><div class="bg-geminiBotMsg p-4 rounded-2xl border border-gray-800 flex gap-1"><div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div><div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.1s]"></div><div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]"></div></div>`;
     msgDiv.appendChild(div);
     msgDiv.scrollTop = msgDiv.scrollHeight;
     return id;
+}
+
+async function loadHistory(isFirst = false) {
+    if (isFirst) msgDiv.innerHTML = '';
+    try {
+        const res = await fetch(`/api/history?chatId=${currentChatId}`);
+        const data = await res.json();
+        if (data.history) {
+            data.history.forEach(m => renderMessage(m.parts[0].text, m.role === 'user' ? 'user' : 'bot', false));
+        }
+    } catch(e) {}
+    msgDiv.scrollTop = msgDiv.scrollHeight;
 }
 
 function toggleMenu() {
@@ -246,12 +287,28 @@ function toggleMenu() {
 }
 
 function showModal(title, body, onSave) {
-    modalTitle.innerText = title; modalBody.innerHTML = body; modalOverlay.classList.remove('hidden'); modalSave.onclick = onSave;
+    modalTitle.innerText = title; 
+    modalBody.innerHTML = body; 
+    modalOverlay.classList.remove('hidden'); 
+    modalSave.onclick = onSave;
 }
-modalCancel.onclick = () => modalOverlay.classList.add('hidden');
-sendBtn.onclick = handleSendMessage;
-menuBtn.onclick = toggleMenu;
-overlay.onclick = toggleMenu;
-input.onkeydown = (e) => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } };
-window.onload = () => loadHistory(true);
-function openCharacterEditor() { alert('Скоро...'); }
+
+/**
+ * ПРИВЯЗКА СОБЫТИЙ (БЕЗОПАСНАЯ)
+ */
+if (sendBtn) sendBtn.addEventListener('click', handleSendMessage);
+if (menuBtn) menuBtn.addEventListener('click', toggleMenu);
+if (overlay) overlay.addEventListener('click', toggleMenu);
+if (modalCancel) modalCancel.addEventListener('click', () => modalOverlay.classList.add('hidden'));
+
+if (input) {
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSendMessage();
+        }
+    });
+}
+
+// Загрузка при старте
+loadHistory(true);
