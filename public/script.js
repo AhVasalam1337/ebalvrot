@@ -386,8 +386,10 @@ async function syncRules() {
     menuContent.appendChild(add);
 }
 
-window.deleteRule = async (id) => { 
-    await fetch(`/api/rules?id=${id}`, { method: 'DELETE' }); 
+window.deleteRule = async (text) => { 
+    // Кодируем текст, чтобы спецсимволы не сломали URL
+    const encodedText = encodeURIComponent(text);
+    await fetch(`/api/rules?text=${encodedText}`, { method: 'DELETE' }); 
     syncRules(); 
 };
 
