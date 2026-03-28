@@ -1,80 +1,67 @@
 import { Redis } from '@upstash/redis';
 const redis = Redis.fromEnv();
 
-const DEFAULTS = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
-
 export default async function handler(req, res) {
     const { method } = req;
-    const { action, userId, chatId, text } = req.query;
+    const { action, userId, chatId } = req.query;
 
     try {
-        // РАБОТА С ПРАВИЛАМИ (action=rules)
+        // Управление правилами
         if (action === 'rules') {
-            const rulesKey = 'geminka:rules';
+            const key = 'geminka:rules';
             if (method === 'GET') {
-                const rules = await redis.lrange(rulesKey, 0, -1);
+                const rules = await redis.lrange(key, 0, -1);
                 return res.status(200).json({ rules: (rules || []).map((r, i) => ({ id: i, text: r })) });
             }
             if (method === 'POST') {
-                const newRule = req.body.text || req.body.rule;
-                if (newRule) await redis.rpush(rulesKey, newRule.trim());
+                await redis.rpush(key, req.body.text);
                 return res.status(200).json({ success: true });
             }
             if (method === 'DELETE') {
-                // Если передаем текст правила в теле или в query
-                const ruleToDelete = text || req.body.text;
-                await redis.lrem(rulesKey, 0, ruleToDelete);
+                await redis.lrem(key, 0, req.query.text);
                 return res.status(200).json({ success: true });
             }
         }
 
-        // РАБОТА С КОНКРЕТНЫМ ЧАТОМ (action=chat)
+        // Управление чатами и настройками
         if (action === 'chat') {
             const settingsKey = `user:${userId}:chat:${chatId}:settings`;
             const metaKey = `chat:${chatId}:meta`;
 
             if (method === 'GET') {
-                const [rawHistory, settings, meta] = await Promise.all([
-                    redis.lrange(`history:${chatId}`, 0, 100),
+                const [history, settings, meta] = await Promise.all([
+                    redis.lrange(`history:${chatId}`, -20, -1),
                     redis.hgetall(settingsKey),
                     redis.hgetall(metaKey)
                 ]);
-                const history = (rawHistory || []).map(item => {
-                    const parsed = typeof item === 'string' ? JSON.parse(item) : item;
-                    return { role: parsed.role, parts: [{ text: parsed.text }] };
+                return res.status(200).json({ 
+                    history: (history || []).map(i => JSON.parse(i)), 
+                    settings: settings || {}, 
+                    meta 
                 });
-                return res.status(200).json({ history, settings: settings || DEFAULTS, meta });
             }
             if (method === 'POST') {
                 const { name, settings } = req.body;
                 if (name) await redis.hset(metaKey, { name, updatedAt: Date.now() });
                 if (settings) await redis.hset(settingsKey, settings);
-                return res.status(200).json({ success: true });
-            }
-            if (method === 'DELETE') {
-                await Promise.all([
-                    redis.srem(`user:${userId}:chats`, chatId),
-                    redis.del(`history:${chatId}`, metaKey, settingsKey)
-                ]);
+                // Добавляем ID чата в список чатов пользователя
+                await redis.sadd(`user:${userId}:chats`, chatId);
                 return res.status(200).json({ success: true });
             }
         }
 
-        // СПИСОК ЧАТОВ (action=list)
+        // Список чатов
         if (action === 'list') {
             const ids = await redis.smembers(`user:${userId}:chats`);
-            if (!ids || ids.length === 0) return res.status(200).json({ list: [] });
-            
-            const list = await Promise.all(ids.map(async (id) => {
+            const list = await Promise.all((ids || []).map(async (id) => {
                 const meta = await redis.hgetall(`chat:${id}:meta`);
-                return { id, name: meta?.name || "Новый чат", updatedAt: parseInt(meta?.updatedAt) || 0 };
+                return { id, name: meta?.name || "Диалог", updatedAt: meta?.updatedAt || 0 };
             }));
             return res.status(200).json({ list: list.sort((a, b) => b.updatedAt - a.updatedAt) });
         }
 
-        return res.status(405).json({ error: "Method not allowed" });
+        return res.status(405).end();
     } catch (e) {
-        console.error(e);
         return res.status(500).json({ error: e.message });
     }
 }
