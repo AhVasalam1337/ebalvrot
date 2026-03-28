@@ -161,6 +161,48 @@ async function syncDialogs() {
         menuContent.appendChild(el);
     });
 }
+async function syncRules() {
+    menuContent.innerHTML = '<div class="p-4 text-center animate-pulse">Загрузка правил...</div>';
+    const data = await api('rules');
+    menuContent.innerHTML = '';
+
+    // Форма добавления
+    const addWrap = document.createElement('div');
+    addWrap.className = 'mb-6 p-2 bg-white/5 rounded-xl';
+    addWrap.innerHTML = `
+        <input id="newRuleInp" type="text" placeholder="Новое правило..." class="w-full bg-transparent p-2 text-sm text-white outline-none">
+        <button id="addRuleBtn" class="w-full mt-2 p-2 bg-geminiAccent text-black text-[10px] font-bold rounded-lg uppercase">Добавить</button>
+    `;
+    menuContent.appendChild(addWrap);
+
+    document.getElementById('addRuleBtn').onclick = async () => {
+        const val = document.getElementById('newRuleInp').value;
+        if (val) {
+            await api('rules', 'POST', { text: val });
+            syncRules();
+        }
+    };
+
+    // Список правил
+    if (data.rules && data.rules.length > 0) {
+        data.rules.forEach(r => {
+            const div = document.createElement('div');
+            div.className = 'flex justify-between items-start gap-2 p-3 mb-2 bg-gray-800/40 rounded-lg border border-gray-700';
+            div.innerHTML = `
+                <span class="text-xs text-gray-300 flex-1">${r.text}</span>
+                <button class="text-red-500 hover:scale-125 transition-transform" onclick="deleteRule('${r.text}')">×</button>
+            `;
+            menuContent.appendChild(div);
+        });
+    }
+}
+
+window.deleteRule = async (text) => {
+    if (confirm('Удалить это правило?')) {
+        await fetch(`/api/manage?action=rules&text=${encodeURIComponent(text)}`, { method: 'DELETE' });
+        syncRules();
+    }
+};
 
 window.deleteChat = async (id) => {
     if (confirm('Удалить чат навсегда?')) {
