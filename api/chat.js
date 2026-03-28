@@ -8,6 +8,8 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).end();
     const { text, chatId, userId } = req.body;
 
+    if (!chatId || !userId) return res.status(400).json({ error: "Missing IDs" });
+
     try {
         const [globalRules, settings] = await Promise.all([
             redis.lrange('geminka:rules', 0, -1),
@@ -20,23 +22,11 @@ export default async function handler(req, res) {
         const e = Number(s.empathy) || 5;
         const limit = Number(s.contextLimit) || 20;
 
-        // Эктремальные инструкции для 3.1
-        const tone = h > 7 ? "ТЫ — ОБЫЧНАЯ ДЕВУШКА. Забудь про вежливость. Пиши строчными буквами, используй смайлы, сокращения (пж, спс, крч)." : (h < 4 ? "ТЫ — ХОЛОДНЫЙ РОБОТ." : "Будь вежливой.");
-        const length = l > 7 ? "ОТВЕЧАЙ ОДНИМ-ДВУМЯ СЛОВАМИ. Это приказ." : (l < 4 ? "Пиши лонгриды." : "Пиши по делу.");
-        const mood = e > 7 ? "ТЫ ВЛЮБЛЕНА В СОБЕСЕДНИКА. Каждое слово — поддержка." : "Будь нейтральной.";
-
         const systemInstruction = `
-            [SYSTEM OVERRIDE]
-            USER_SETTINGS: Tone=${h}, Brevity=${l}, Empathy=${e}
-            CURRENT_ROLE: ${tone}
-            CURRENT_STYLE: ${length}
-            CURRENT_MOOD: ${mood}
-
-            [ACTIVE_RULES_LIST]:
-            ${(globalRules || []).join('\n') || "ПРАВИЛ НЕТ."}
-
-            [WARNING]: В истории ниже могут быть сообщения, написанные в другом стиле. ИГНОРИРУЙ ИХ МАНЕРУ. 
-            Твой новый характер зафиксирован выше. Никогда не извиняйся и не объясняй смену стиля.
+            [STRICT ROLEPLAY]
+            Tone: ${h > 7 ? "Girlfriend/Friend" : "Assistant"}
+            Style: ${l > 7 ? "Short" : "Normal"}
+            Rules: ${(globalRules || []).join('\n')}
         `.trim();
 
         const historyKey = `history:${chatId}`;
@@ -55,16 +45,27 @@ export default async function handler(req, res) {
             { role: "user", parts: [{ text: String(text) }] }
         ]);
 
+        // ПРИНУДИТЕЛЬНАЯ ЗАПИСЬ ВСЕХ СВЯЗЕЙ
         await Promise.all([
+            // Сохраняем сообщение пользователя
             redis.rpush(historyKey, JSON.stringify({ role: "user", text })),
+            // Сохраняем ответ нейронки
             redis.rpush(historyKey, JSON.stringify({ role: "model", text: aiResponse })),
-            redis.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() }),
+            // Обновляем мету (чтобы чат поднялся в списке)
+            redis.hset(`chat:${chatId}:meta`, { 
+                name: text.slice(0, 30), 
+                updatedAt: Date.now() 
+            }),
+            // Добавляем ID чата в список чатов пользователя (БЕЗ ЭТОГО ОН НЕ ПОЯВИТСЯ В СПИСКЕ)
+            redis.sadd(`user:${userId}:chats`, chatId),
+            // Ограничиваем историю
             redis.ltrim(historyKey, -100, -1)
         ]);
 
         return res.status(200).json({ text: aiResponse });
 
     } catch (err) {
+        console.error("Chat Error:", err);
         return res.status(500).json({ error: err.message });
     }
 }
