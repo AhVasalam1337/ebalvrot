@@ -45,12 +45,22 @@ function renderMessage(text, role, animate = false) {
 /**
  * API WRAPPER
  */
-async function api(action, method = 'GET', body = null) {
-    // Принудительно передаем текущие ID в URL, чтобы бэкенд всегда знал контекст
-    const url = `/api/manage?action=${action}&userId=${userId}&chatId=${currentChatId}`;
-    const options = { method, headers: { 'Content-Type': 'application/json' } };
+async function api(action, method = 'GET', body = null, forceChatId = null) {
+    // Если chatId не передан в аргументах, берем текущий из глобальной переменной
+    const targetChatId = forceChatId || currentChatId || '';
+    const url = `/api/manage?action=${action}&userId=${userId}&chatId=${targetChatId}`;
+    
+    const options = { 
+        method, 
+        headers: { 'Content-Type': 'application/json' } 
+    };
     if (body) options.body = JSON.stringify(body);
+
     const res = await fetch(url, options);
+    if (!res.ok) {
+        console.error("API Error:", res.status);
+        return {};
+    }
     return res.json();
 }
 
