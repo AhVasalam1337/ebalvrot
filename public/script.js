@@ -164,10 +164,16 @@ async function syncDialogs() {
         const addBtn = document.createElement('button');
         addBtn.className = 'w-full p-3 mb-4 border border-dashed border-geminiAccent/30 text-geminiAccent text-[10px] font-black uppercase rounded-xl hover:bg-geminiAccent/5 transition-all';
         addBtn.innerText = '+ Создать новый чат';
-        addBtn.onclick = async () => {
+addBtn.onclick = async () => {
             const newId = 'c_' + Math.random().toString(36).substr(2, 9);
+            // Прямо указываем ID в URL запроса, чтобы не было путаницы
+            const url = `/api/manage?action=chat&userId=${userId}&chatId=${newId}`;
+            await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: "Новый диалог" })
+            });
             currentChatId = newId;
-            await api('chat', 'POST', { name: "Новый диалог" });
             selectChat(newId, "Новый диалог");
         };
         menuContent.appendChild(addBtn);
