@@ -12,21 +12,35 @@ let userSettings = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
 
 const STATES = { MAIN: 'MAIN', DIALOGS: 'DIALOGS', RULES: 'RULES', SETTINGS: 'SETTINGS' };
 
-// УПРАВЛЕНИЕ ИНТЕРФЕЙСОМ
+/**
+ * ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+ */
+function checkInput() {
+    const text = input.value.trim();
+    sendBtn.disabled = text.length === 0;
+    // Визуальный фидбек для кнопки
+    sendBtn.style.opacity = text.length > 0 ? '1' : '0.5';
+    sendBtn.style.cursor = text.length > 0 ? 'pointer' : 'default';
+}
+
 function renderMessage(text, role, animate = false) {
     const container = document.createElement('div');
     container.className = `flex gap-3 mb-5 ${role === 'user' ? 'flex-row-reverse' : ''}`;
     const bubble = document.createElement('div');
-    bubble.className = `${role === 'bot' ? 'bg-geminiBotMsg' : 'bg-geminiUserMsg'} p-4 rounded-2xl max-w-[85%] text-white border border-gray-800 whitespace-pre-wrap`;
+    bubble.className = `${role === 'bot' ? 'bg-geminiBotMsg' : 'bg-geminiUserMsg'} p-4 rounded-2xl max-w-[85%] text-white border border-gray-800 whitespace-pre-wrap msg-anim`;
     if (animate) bubble.classList.add('animate-message-entry');
     bubble.innerText = text;
-    container.innerHTML = role === 'bot' ? `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full">` : `<div class="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center font-bold">Я</div>`;
+    
+    const avatar = role === 'bot' 
+        ? `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full shrink-0">` 
+        : `<div class="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center font-bold shrink-0 text-xs">Я</div>`;
+    
+    container.innerHTML = avatar;
     container.appendChild(bubble);
     msgDiv.appendChild(container);
     msgDiv.scrollTop = msgDiv.scrollHeight;
 }
 
-// РАБОТА С API
 async function api(action, method = 'GET', body = null) {
     const url = `/api/manage?action=${action}&userId=${userId}&chatId=${currentChatId}`;
     const options = { method, headers: { 'Content-Type': 'application/json' } };
@@ -35,23 +49,36 @@ async function api(action, method = 'GET', body = null) {
     return res.json();
 }
 
-async function selectChat(id, name) {
+/**
+ * ОСНОВНАЯ ЛОГИКА
+ */
+async function selectChat(id, name, isInitial = false) {
     currentChatId = id;
     localStorage.setItem('pwa_chat_id', id);
     chatNameDisplay.innerText = name || "Чат";
-    msgDiv.innerHTML = '<div class="p-10 text-center text-gray-600 animate-pulse">Загрузка истории...</div>';
+    msgDiv.innerHTML = '<div class="p-10 text-center text-gray-600 animate-pulse text-xs uppercase tracking-widest">Загрузка истории...</div>';
     
-    const data = await api('chat');
-    userSettings = data.settings;
-    msgDiv.innerHTML = '';
-    if (data.history) data.history.forEach(m => renderMessage(m.parts[0].text, m.role === 'user' ? 'user' : 'bot'));
-    if (window.innerWidth < 1024) toggleMenu();
+    try {
+        const data = await api('chat');
+        userSettings = data.settings || userSettings;
+        msgDiv.innerHTML = '';
+        if (data.history) {
+            data.history.forEach(m => renderMessage(m.parts[0].text, m.role === 'user' ? 'user' : 'bot'));
+        }
+    } catch (e) {
+        msgDiv.innerHTML = '<div class="p-10 text-center text-red-500 text-xs">ОШИБКА ЗАГРУЗКИ</div>';
+    }
+    
+    // Закрываем меню только если это НЕ первая загрузка страницы
+    if (!isInitial && window.innerWidth < 1024) toggleMenu();
 }
 
 async function handleSend() {
     const text = input.value.trim();
     if (!text || sendBtn.disabled) return;
-    input.value = ''; sendBtn.disabled = true;
+    
+    input.value = '';
+    checkInput();
     renderMessage(text, 'user');
     
     const res = await fetch('/api/chat', {
@@ -61,20 +88,40 @@ async function handleSend() {
     });
     const data = await res.json();
     if (data.text) renderMessage(data.text, 'bot', true);
-    sendBtn.disabled = false;
 }
 
-// МЕНЮ И НАСТРОЙКИ
+/**
+ * МЕНЮ И НАВИГАЦИЯ
+ */
+function toggleMenu() {
+    const s = document.getElementById('sidebar');
+    const o = document.getElementById('overlay');
+    const isOpen = s.classList.contains('translate-x-0');
+    
+    if (isOpen) {
+        s.classList.replace('translate-x-0', '-translate-x-full');
+        o.classList.add('hidden');
+    } else {
+        renderMenu(STATES.MAIN);
+        s.classList.replace('-translate-x-full', 'translate-x-0');
+        o.classList.remove('hidden');
+    }
+}
+
 function renderMenu(state) {
     menuContent.innerHTML = '';
     document.getElementById('backBtn').classList.toggle('hidden', state === STATES.MAIN);
     
     if (state === STATES.MAIN) {
-        const items = [{i:'forum', t:'Чаты', s:STATES.DIALOGS}, {i:'gavel', t:'Правила', s:STATES.RULES}, {i:'tune', t:'Тюнинг', s:STATES.SETTINGS}];
+        const items = [
+            {i:'forum', t:'Диалоги', s:STATES.DIALOGS}, 
+            {i:'gavel', t:'Правила системы', s:STATES.RULES}, 
+            {i:'tune', t:'Настройки ИИ', s:STATES.SETTINGS}
+        ];
         items.forEach(item => {
             const d = document.createElement('div');
-            d.className = 'flex items-center gap-3 text-gray-300 p-4 hover:bg-gray-800 rounded-xl cursor-pointer';
-            d.innerHTML = `<span class="material-icons-outlined">${item.i}</span><span>${item.t}</span>`;
+            d.className = 'flex items-center gap-3 text-gray-300 p-4 hover:bg-white/5 rounded-xl cursor-pointer transition-colors active:scale-95';
+            d.innerHTML = `<span class="material-icons-outlined text-gray-500">${item.i}</span><span class="text-sm font-medium">${item.t}</span>`;
             d.onclick = () => renderMenu(item.s);
             menuContent.appendChild(d);
         });
@@ -88,69 +135,90 @@ function renderMenu(state) {
 }
 
 async function syncDialogs() {
+    menuContent.innerHTML = '<div class="p-4 text-center text-xs text-gray-600 animate-pulse">СПИСОК ПУСТ...</div>';
     const { list } = await api('list');
+    menuContent.innerHTML = '';
+
     const addBtn = document.createElement('button');
-    addBtn.className = 'w-full p-4 mb-4 border border-dashed border-geminiAccent text-geminiAccent rounded-xl';
-    addBtn.innerText = '+ НОВЫЙ ЧАТ';
+    addBtn.className = 'w-full p-3 mb-4 border border-dashed border-geminiAccent/30 text-geminiAccent text-[10px] font-black uppercase rounded-xl hover:bg-geminiAccent/5';
+    addBtn.innerText = '+ Создать новый чат';
     addBtn.onclick = async () => {
         const newId = 'c_' + Math.random().toString(36).substr(2, 9);
-        currentChatId = newId;
         await api('chat', 'POST', { name: "Новый диалог" });
         selectChat(newId, "Новый диалог");
     };
     menuContent.appendChild(addBtn);
+
     list.forEach(d => {
         const el = document.createElement('div');
-        el.className = `p-3 mb-2 rounded-xl border ${d.id === currentChatId ? 'border-geminiAccent bg-geminiAccent/10' : 'border-gray-700'}`;
-        el.innerHTML = `<div class="flex justify-between">
-            <span class="truncate cursor-pointer flex-1" onclick="selectChat('${d.id}', '${d.name}')">${d.name}</span>
-            <button onclick="deleteChat('${d.id}')" class="text-gray-500">×</button>
-        </div>`;
+        el.className = `p-3 mb-2 rounded-xl border transition-all ${d.id === currentChatId ? 'border-geminiAccent bg-geminiAccent/10' : 'border-gray-800 bg-gray-900/50'}`;
+        el.innerHTML = `
+            <div class="flex justify-between items-center">
+                <span class="truncate cursor-pointer flex-1 text-sm ${d.id === currentChatId ? 'text-white font-bold' : 'text-gray-400'}" 
+                      onclick="selectChat('${d.id}', '${d.name}')">${d.name}</span>
+                <button onclick="deleteChat('${d.id}')" class="text-gray-600 hover:text-red-500 ml-2">×</button>
+            </div>`;
         menuContent.appendChild(el);
     });
 }
 
+window.deleteChat = async (id) => {
+    if (confirm('Удалить чат навсегда?')) {
+        currentChatId = id;
+        await api('chat', 'DELETE');
+        location.reload();
+    }
+};
+
 function renderSettings() {
     const fields = [
         {id:'laconic', n:'Краткость'}, {id:'empathy', n:'Эмпатия'}, 
-        {id:'human', n:'Сленг'}, {id:'contextLimit', n:'Память', max: 51}
+        {id:'human', n:'Сленг'}, {id:'contextLimit', n:'Память (сообщений)', max: 51}
     ];
     fields.forEach(f => {
         const div = document.createElement('div');
         div.className = 'mb-6';
-        div.innerHTML = `<div class="flex justify-between text-xs text-gray-400 mb-2"><span>${f.n}</span><span id="v_${f.id}">${userSettings[f.id]}</span></div>
-            <input type="range" min="0" max="${f.max || 10}" value="${userSettings[f.id]}" class="w-full accent-geminiAccent" 
-            oninput="userSettings['${f.id}']=parseInt(this.value); document.getElementById('v_${f.id}').innerText=this.value">`;
+        const val = userSettings[f.id] || 0;
+        div.innerHTML = `
+            <div class="flex justify-between text-[10px] text-gray-500 uppercase font-black mb-2">
+                <span>${f.n}</span>
+                <span id="v_${f.id}" class="text-geminiAccent">${val === 51 ? '∞' : val}</span>
+            </div>
+            <input type="range" min="0" max="${f.max || 10}" value="${val}" class="w-full accent-geminiAccent h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer" 
+            oninput="userSettings['${f.id}']=parseInt(this.value); document.getElementById('v_${f.id}').innerText=(this.value == 51 ? '∞' : this.value)">`;
         menuContent.appendChild(div);
     });
+
     const save = document.createElement('button');
-    save.className = 'w-full p-4 bg-geminiAccent text-black font-bold rounded-xl';
-    save.innerText = 'СОХРАНИТЬ';
-    save.onclick = async () => { await api('chat', 'POST', { settings: userSettings }); renderMenu(STATES.MAIN); };
+    save.className = 'w-full p-4 bg-geminiAccent text-black font-black text-[10px] uppercase rounded-xl shadow-lg active:scale-95 transition-transform';
+    save.innerText = 'Применить настройки';
+    save.onclick = async () => { 
+        await api('chat', 'POST', { settings: userSettings }); 
+        renderMenu(STATES.MAIN); 
+    };
     menuContent.appendChild(save);
 }
 
 // ИНИЦИАЛИЗАЦИЯ
 document.addEventListener('DOMContentLoaded', () => {
-    if (!currentChatId) {
-        currentChatId = 'c_' + Math.random().toString(36).substr(2, 9);
-        api('chat', 'POST', { name: "Первый чат" }).then(() => selectChat(currentChatId, "Первый чат"));
-    } else {
-        selectChat(currentChatId, chatNameDisplay.innerText);
-    }
+    // Слушатели ввода
+    input.addEventListener('input', checkInput);
+    input.addEventListener('keydown', (e) => (e.key === 'Enter' && !e.shiftKey) ? (e.preventDefault(), handleSend()) : null);
     
+    // Кнопки интерфейса
     document.getElementById('menuBtn').onclick = toggleMenu;
+    document.getElementById('overlay').onclick = toggleMenu;
     document.getElementById('backBtn').onclick = () => renderMenu(STATES.MAIN);
     document.getElementById('sendBtn').onclick = handleSend;
-    input.onkeydown = (e) => (e.key === 'Enter' && !e.shiftKey) ? (e.preventDefault(), handleSend()) : null;
-});
 
-function toggleMenu() {
-    const s = document.getElementById('sidebar');
-    const o = document.getElementById('overlay');
-    const isOpen = s.classList.contains('translate-x-0');
-    s.classList.toggle('translate-x-0', !isOpen);
-    s.classList.toggle('-translate-x-full', isOpen);
-    o.classList.toggle('hidden', isOpen);
-    if (!isOpen) renderMenu(STATES.MAIN);
-}
+    // Стартовая загрузка
+    if (!currentChatId) {
+        const tempId = 'c_' + Math.random().toString(36).substr(2, 9);
+        currentChatId = tempId;
+        api('chat', 'POST', { name: "Первый чат" }).then(() => selectChat(tempId, "Первый чат", true));
+    } else {
+        selectChat(currentChatId, chatNameDisplay.innerText, true);
+    }
+    
+    checkInput();
+});
