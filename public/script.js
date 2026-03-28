@@ -1,5 +1,5 @@
 /**
- * ГЛОБАЛЬНАЯ ИНИЦИАЛИЗАЦИЯ
+ * ПОЛНЫЙ SCRIPT.JS С ОБРАБОТКОЙ ОШИБОК 500
  */
 const msgDiv = document.getElementById('chat-messages');
 const input = document.getElementById('userInput');
@@ -11,7 +11,6 @@ const menuContent = document.getElementById('menuContent');
 const menuTitle = document.getElementById('menuTitle');
 const backBtn = document.getElementById('backBtn');
 const chatNameDisplay = document.getElementById('chatNameDisplay');
-
 const modalOverlay = document.getElementById('modalOverlay');
 const modalTitle = document.getElementById('modalTitle');
 const modalBody = document.getElementById('modalBody');
@@ -25,20 +24,13 @@ localStorage.setItem('pwa_user_id', userId);
 let currentChatId = localStorage.getItem('pwa_chat_id') || 'c_' + Math.random().toString(36).substr(2, 9);
 localStorage.setItem('pwa_chat_id', currentChatId);
 
-/**
- * ЯДРО: ОТПРАВКА СООБЩЕНИЙ
- */
 async function handleSendMessage() {
     const text = input.value.trim();
     if (!text) return;
 
-    // ВИЗУАЛЬНАЯ БЛОКИРОВКА
     sendBtn.disabled = true;
-    sendBtn.classList.add('opacity-50', 'pointer-events-none');
-    
+    sendBtn.classList.add('opacity-50');
     input.value = '';
-    input.style.height = 'auto';
-
     renderMessage(text, 'user');
     const lId = showLoading();
 
@@ -50,32 +42,26 @@ async function handleSendMessage() {
         });
         
         const data = await res.json();
-        const loader = document.getElementById(lId);
-        if (loader) loader.remove();
+        document.getElementById(lId)?.remove();
 
-        if (data.text) {
+        if (res.ok && data.text) {
             renderMessage(data.text, 'bot');
         } else {
-            renderMessage('Geminка не смогла ответить. Проверь логи сервера.', 'bot');
+            // Если сервер вернул 500, выводим текст ошибки
+            renderMessage(`Ошибка сервера (500): ${data.error || 'Неизвестная ошибка в методах ИИ'}`, 'bot');
         }
     } catch (e) { 
-        const loader = document.getElementById(lId);
-        if (loader) loader.remove();
-        renderMessage('Ошибка сети. Попробуй позже.', 'bot'); 
+        document.getElementById(lId)?.remove();
+        renderMessage('Сетевая ошибка. Возможно, сервер Vercel уснул.', 'bot'); 
     } finally { 
-        // ПРИНУДИТЕЛЬНАЯ РАЗБЛОКИРОВКА
         sendBtn.disabled = false; 
-        sendBtn.classList.remove('opacity-50', 'pointer-events-none');
+        sendBtn.classList.remove('opacity-50');
     }
 }
 
-/**
- * МЕНЮ И ДИАЛОГИ
- */
 function renderMenu(state) {
     menuContent.innerHTML = '';
     backBtn.classList.remove('hidden');
-    
     switch(state) {
         case STATES.MAIN:
             menuTitle.innerText = 'Меню';
@@ -102,9 +88,9 @@ function renderMenu(state) {
     }
 }
 
-function createMenuItem(icon, text, action, color = 'text-gray-300') {
+function createMenuItem(icon, text, action) {
     const div = document.createElement('div');
-    div.className = `flex items-center gap-3 ${color} p-4 hover:bg-gray-800 rounded-xl cursor-pointer active:scale-95 transition-all mb-1`;
+    div.className = `flex items-center gap-3 text-gray-300 p-4 hover:bg-gray-800 rounded-xl cursor-pointer mb-1 transition-all`;
     div.innerHTML = `<span class="material-icons-outlined">${icon}</span><span class="text-sm font-medium">${text}</span>`;
     div.onclick = action;
     menuContent.appendChild(div);
@@ -122,16 +108,17 @@ async function syncDialogs() {
         nBtn.innerHTML = '<span class="material-icons-outlined">add_comment</span><span class="text-sm font-bold uppercase">Новый чат</span>';
         nBtn.onclick = async () => {
             const newId = 'c_' + Math.random().toString(36).substr(2, 9);
+            // Сразу регистрируем в Redis
             await fetch('/api/dialogs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, chatId: newId })
             });
             currentChatId = newId;
-            localStorage.setItem('pwa_chat_id', currentChatId);
+            localStorage.setItem('pwa_chat_id', newId);
             chatNameDisplay.innerText = 'Новый чат';
             msgDiv.innerHTML = '';
-            renderMessage("Новый диалог готов!", 'bot');
+            renderMessage("Чат готов. Напиши что-нибудь!", 'bot');
             toggleMenu();
         };
         menuContent.appendChild(nBtn);
@@ -155,9 +142,6 @@ async function syncDialogs() {
     } catch (e) { console.error(e); }
 }
 
-/**
- * ГЛОБАЛЬНЫЕ МЕТОДЫ (WINDOW)
- */
 window.selectChat = (id, name) => {
     currentChatId = id;
     localStorage.setItem('pwa_chat_id', id);
@@ -177,9 +161,6 @@ window.deleteRule = async (id) => {
     syncRules();
 };
 
-/**
- * ПРАВИЛА И МОДАЛКИ
- */
 async function syncRules() {
     menuContent.innerHTML = '';
     const res = await fetch('/api/rules');
@@ -194,14 +175,14 @@ async function syncRules() {
         });
     }
     const addBtn = document.createElement('button');
-    addBtn.className = 'w-full p-3 mt-2 border border-dashed border-gray-700 rounded-xl text-gray-500 text-[11px] font-bold';
-    addBtn.innerText = '+ ДОБАВИТЬ ПРАВИЛО';
+    addBtn.className = 'w-full p-3 mt-2 border border-dashed border-gray-700 rounded-xl text-gray-500 text-[11px] font-bold uppercase';
+    addBtn.innerText = '+ Добавить правило';
     addBtn.onclick = openAddRule;
     menuContent.appendChild(addBtn);
 }
 
 function openAddRule() {
-    showModal('Новое правило', '<textarea id="modalInput" class="w-full h-24 bg-gray-800 border-gray-700 rounded-xl p-3 text-white text-sm"></textarea>', async () => {
+    showModal('Новое правило', '<textarea id="modalInput" class="w-full h-24 bg-gray-800 border-gray-700 rounded-xl p-3 text-white text-sm" placeholder="Напиши правило..."></textarea>', async () => {
         const text = document.getElementById('modalInput').value;
         if (!text) return;
         await fetch('/api/rules', {
@@ -229,13 +210,10 @@ function openRenameChat() {
     });
 }
 
-/**
- * ВСПОМОГАТЕЛЬНЫЕ
- */
 function renderMessage(text, role, anim = true) {
     const container = document.createElement('div');
     container.className = `flex gap-3 items-start mb-5 ${role === 'user' ? 'flex-row-reverse' : ''}`;
-    const avatar = role === 'bot' ? `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full shrink-0">` : `<div class="w-9 h-9 rounded-full bg-blue-700 flex items-center justify-center text-white text-[10px] shrink-0 font-bold uppercase">Я</div>`;
+    const avatar = role === 'bot' ? `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full shrink-0 shadow-lg border border-gray-800">` : `<div class="w-9 h-9 rounded-full bg-blue-700 flex items-center justify-center text-white text-[10px] shrink-0 font-bold shadow-lg">Я</div>`;
     container.innerHTML = `${avatar}<div class="${role === 'bot' ? 'bg-geminiBotMsg border-gray-800' : 'bg-geminiUserMsg border-gray-700'} p-4 rounded-2xl max-w-[85%] text-[15px] text-white border text-left whitespace-pre-wrap leading-relaxed shadow-sm">${text}</div>`;
     msgDiv.appendChild(container);
     msgDiv.scrollTop = msgDiv.scrollHeight;
@@ -280,28 +258,18 @@ function showModal(title, body, onSave) {
 }
 
 /**
- * ПРИВЯЗКА СОБЫТИЙ И ОЖИВЛЕНИЕ КНОПКИ
+ * ИНИЦИАЛИЗАЦИЯ
  */
 document.addEventListener('DOMContentLoaded', () => {
-    // ЖЕСТКАЯ РАЗБЛОКИРОВКА ПРИ ЗАГРУЗКЕ
     if (sendBtn) {
         sendBtn.disabled = false;
-        sendBtn.classList.remove('opacity-50', 'pointer-events-none');
         sendBtn.addEventListener('click', handleSendMessage);
     }
-    
     if (menuBtn) menuBtn.addEventListener('click', toggleMenu);
     if (overlay) overlay.addEventListener('click', toggleMenu);
     if (modalCancel) modalCancel.addEventListener('click', () => modalOverlay.classList.add('hidden'));
-
-    if (input) {
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
-            }
-        });
-    }
-
+    
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } });
+    
     loadHistory(true);
 });
