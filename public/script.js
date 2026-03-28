@@ -337,12 +337,18 @@ async function syncDialogs() {
 }
 
 window.selectChat = async (id, name) => {
+    // 1. Сначала меняем ID
     currentChatId = id; 
     localStorage.setItem('pwa_chat_id', id);
     chatNameDisplay.innerText = name;
     
-    // ВАЖНО: Ждем загрузки настроек ПЕРЕД отрисовкой истории
+    // 2. Очищаем экран, чтобы не видеть старых сообщений другого чата
+    msgDiv.innerHTML = ''; 
+    
+    // 3. ЖДЕМ загрузки настроек именно для нового ID
     await loadChatSettings(id);
+    
+    // 4. И только потом грузим историю
     loadHistory(true); 
     toggleMenu();
 };
