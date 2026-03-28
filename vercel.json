@@ -1,13 +1,10 @@
 {
-  "version": 2,
   "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "index.js"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/public/index.html"
-    }
+    { "source": "/api/user/settings", "destination": "/api/manage" },
+    { "source": "/api/history", "destination": "/api/manage" },
+    { "source": "/api/dialogs", "destination": "/api/manage" },
+    { "source": "/api/rules", "destination": "/api/manage" },
+    { "source": "/api/chat/rename", "destination": "/api/manage" },
+    { "source": "/api/admin/reset", "destination": "/api/manage" }
   ]
 }
