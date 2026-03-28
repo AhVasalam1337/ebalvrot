@@ -161,11 +161,8 @@ async function handleSendMessage() {
     const text = input.value.trim();
     if (!text) return;
 
-    // Сразу блокируем кнопку и очищаем поле
     sendBtn.disabled = true;
     input.value = '';
-    input.style.height = 'auto';
-
     renderMessage(text, 'user');
     const loaderId = showLoading();
 
@@ -173,16 +170,19 @@ async function handleSendMessage() {
         const res = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, chatId: currentChatId })
+            body: JSON.stringify({ 
+                text: text, 
+                chatId: currentChatId, 
+                userId: userId // ПЕРЕДАЕМ СТАТИЧНЫЙ ID ПОЛЬЗОВАТЕЛЯ
+            })
         });
         const data = await res.json();
         document.getElementById(loaderId)?.remove();
         if (data.text) renderMessage(data.text, 'bot');
     } catch (e) {
         document.getElementById(loaderId)?.remove();
-        renderMessage('Ошибка отправки. Попробуй позже.', 'bot');
+        renderMessage('Ошибка связи.', 'bot');
     } finally {
-        // Разблокируем кнопку только после получения ответа (или ошибки)
         sendBtn.disabled = false;
     }
 }
