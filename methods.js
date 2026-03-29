@@ -2,18 +2,17 @@ import fetch from 'node-fetch';
 
 export async function getGeminiResponse(systemInstruction, contents) {
     const GEMINI_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_KEY) throw new Error("API KEY отсутствует в настройках Vercel");
+    if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY не найден");
 
-    // Используем проверенную 1.5-flash
-    const model = "gemini-1.5-flash"; 
+    const model = "gemini-3.1-flash-lite-preview"; 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
 
     const payload = {
         system_instruction: { parts: [{ text: systemInstruction }] },
         contents: contents,
         generationConfig: {
-            temperature: 0.8,
-            maxOutputTokens: 1024,
+            temperature: 0.9,
+            maxOutputTokens: 2048,
         }
     };
 
@@ -26,12 +25,11 @@ export async function getGeminiResponse(systemInstruction, contents) {
     const data = await res.json();
 
     if (data.error) {
-        console.error("Gemini API Error Detail:", JSON.stringify(data.error));
-        throw new Error(data.error.message || "Ошибка API");
+        throw new Error(data.error.message || "Ошибка API Gemini");
     }
 
     const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!resultText) throw new Error("Модель вернула пустой ответ");
+    if (!resultText) throw new Error("Пустой ответ от модели");
 
     return resultText;
 }
