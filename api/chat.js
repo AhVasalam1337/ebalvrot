@@ -2,52 +2,48 @@ import { kv } from '@vercel/kv';
 import { getGeminiResponse } from '../methods.js';
 
 export default async function handler(req, res) {
-    if (req.method !== 'POST') return res.status(405).json({ error: "Method not allowed" });
-    
-    const { text, chatId, userId } = req.body;
-    if (!text || !chatId || !userId) return res.status(200).json({ text: "Ошибка: данные не получены" });
+    // Форсируем JSON заголовок
+    res.setHeader('Content-Type', 'application/json');
+
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: "Only POST allowed" });
+    }
 
     try {
-        let s = { laconic: 5, empathy: 5, human: 5, contextLimit: 10 };
-        try {
-            const saved = await kv.hgetall(`user:${userId}:chat:${chatId}:settings`);
-            if (saved) s = {
-                laconic: Number(saved.laconic || 5),
-                empathy: Number(saved.empathy || 5),
-                human: Number(saved.human || 5),
-                contextLimit: Number(saved.contextLimit || 10)
-            };
-        } catch (e) { console.error("KV Error:", e); }
+        const { text, chatId, userId } = req.body;
 
-        const bDesc = s.laconic <= 3 ? "ОТВЕЧАЙ ОДНИМ СЛОВОМ." : s.laconic >= 8 ? "ПИШИ ОГРОМНЫЕ ПАСТЫ." : "Отвечай кратко.";
-        const eDesc = s.empathy <= 3 ? "Будь злым врагом, груби." : s.empathy >= 8 ? "Ты лучшая подружка, обожай юзера." : "Будь нейтрален.";
-        const hDesc = s.human >= 7 ? "Используй жесткий сленг, маты и живую речь." : "Говори как робот.";
-
-        const systemInstruction = `Ты помощник. Инструкции: ${bDesc} ${eDesc} ${hDesc}. Никогда не говори, что ты ИИ.`;
-
-        let contents = [];
-        if (s.contextLimit > 0) {
-            try {
-                const raw = await kv.lrange(`history:${chatId}`, -(s.contextLimit * 2), -1);
-                contents = (raw || []).map(item => {
-                    const p = typeof item === 'string' ? JSON.parse(item) : item;
-                    return { role: p.role === 'user' ? 'user' : 'model', parts: [{ text: String(p.text) }] };
-                });
-            } catch (e) { console.error("History Error:", e); }
+        if (!text || !chatId || !userId) {
+            return res.status(200).json({ text: "Системная ошибка: нет данных в теле запроса." });
         }
 
-        contents.push({ role: "user", parts: [{ text: String(text) }] });
+        // 1. Получаем настройки (с проверкой на существование базы)
+        let settings = { laconic: 5, empathy: 5, human: 5, contextLimit: 5 };
+        try {
+            const saved = await kv.hgetall(`user:${userId}:chat:${chatId}:settings`);
+            if (saved) settings = saved;
+        } catch (e) {
+            console.error("KV Error ignored:", e.message);
+        }
 
-        const aiResponse = await getGeminiResponse(systemInstruction, contents);
+        const instruction = `Ты помощник. Стиль: лаконичность ${settings.laconic}, эмпатия ${settings.empathy}.`;
 
-        kv.rpush(`history:${chatId}`, 
-            JSON.stringify({ role: "user", text: String(text) }), 
-            JSON.stringify({ role: "model", text: aiResponse })
-        ).then(() => kv.ltrim(`history:${chatId}`, -100, -1)).catch(e => console.error("Save Error:", e));
+        // 2. Вызов Gemini через наш метод
+        const aiResponse = await getGeminiResponse(instruction, [
+            { role: "user", parts: [{ text: String(text) }] }
+        ]);
+
+        // 3. Сохранение в KV (делаем через await, чтобы не убить процесс Vercel раньше времени)
+        try {
+            await kv.rpush(`history:${chatId}`, JSON.stringify({ role: "model", text: aiResponse }));
+        } catch (e) {
+            console.error("History save error:", e.message);
+        }
 
         return res.status(200).json({ text: aiResponse });
 
     } catch (err) {
-        return res.status(200).json({ text: `Ошибка: ${err.message}` });
+        // Если упало здесь — мы увидим текст ошибки прямо в чате, а не 500
+        console.error("HANDLER_CRASH:", err);
+        return res.status(200).json({ text: `Критическая ошибка сервера: ${err.message}` });
     }
 }
