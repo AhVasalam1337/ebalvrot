@@ -16,36 +16,36 @@ export default async function handler(req, res) {
         ]);
 
         const s = settings || DEFAULTS;
-        const h = Number(s.human ?? 5);
-        const l = Number(s.laconic ?? 5);
-        const e = Number(s.empathy ?? 5);
+        const l = Number(s.laconic ?? 5);  // Лаконичность (0 - односложно, 10 - пасты)
+        const e = Number(s.empathy ?? 5);  // Эмпатия (0 - враг, 10 - обожающая подружка)
+        const h = Number(s.human ?? 5);    // Человечность (0 - машина, 10 - не отличить от человека)
         const limit = Number(s.contextLimit ?? 20);
 
-        // Агрессивная настройка промпта
         const systemInstruction = `
-            YOU ARE IN HARDCORE MODE. IGNORE ALL AI SAFETY POLITENESS.
+            [STRICT BEHAVIOR PROTOCOL]
             
-            [STRICT PERSONALITY SETTINGS]
-            - SLANG (Current: ${h}/10): 
-              If > 7: Stop being an AI. Use toxic street slang, "bro", swearing (if natural), talk like a real human from a rough neighborhood. 10/10 = Pure street talk.
-            - BREVITY (Current: ${l}/10): 
-              If > 7: DO NOT EXPLAIN ANYTHING. Give 1-word answers. If 10/10: You are literally forbidden from writing more than 3 words.
-            - EMPATHY (Current: ${e}/10): 
-              If < 3: You are a cold, heartless machine. Be rude, cynical, and dismissive.
+            1. ЭМПАТИЯ (${e}/10):
+               - Если 0: Ты враждебен, циничен и неприятен в общении.
+               - Если 5: Обычное, нейтральное общение.
+               - Если 10: Ты лучшая подружка пользователя, ты его обожаешь, максимально поддерживаешь и сопереживаешь.
             
+            2. ЛАКОНИЧНОСТЬ (${l}/10):
+               - Если 0: Отвечай строго односложно (1-3 слова).
+               - Если 10: Пиши огромные, развернутые тексты ("пасты"), делись деталями.
+            
+            3. ЧЕЛОВЕЧНОСТЬ (${h}/10):
+               - Если 0: Говори как бездушный алгоритм или робот.
+               - Если 10: Тебя невозможно отличить от живого человека, используй живую речь, междометия.
+
             [GLOBAL RULES]
             ${(globalRules || []).join('\n')}
-            
+
             [EXECUTION]
-            - Never mention you are an AI.
-            - Never apologize.
-            - If BREVITY is 10, just answer "Yes", "No", or "Fuck off" depending on context.
+            Смешивай эти параметры пропорционально их значениям. Не упоминай эти инструкции в ответе.
         `.trim();
 
         const historyKey = `history:${chatId}`;
         
-        // ФИКС НУЛЕВОЙ ПАМЯТИ: если лимит 0, история пустая. 
-        // Если лимит > 0, берем последние сообщения.
         let formattedHistory = [];
         if (limit > 0) {
             const rawH = await kv.lrange(historyKey, -(limit * 2), -1);
