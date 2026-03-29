@@ -1,7 +1,6 @@
 import { kv } from '@vercel/kv';
 
 export default async function handler(req, res) {
-    // 1. Сразу ставим заголовки, чтобы фронт не тупил
     res.setHeader('Content-Type', 'application/json');
 
     if (req.method !== 'POST') {
@@ -9,53 +8,54 @@ export default async function handler(req, res) {
     }
 
     try {
-        const { text, chatId } = req.body;
+        const { text, chatId, userId } = req.body;
+
         if (!text || !chatId) {
-            return res.status(200).json({ text: "Ошибка: Пустой текст или ID чата." });
+            return res.status(200).json({ text: "Ошибка: данные не получены." });
         }
 
         const key = process.env.GEMINI_API_KEY;
         if (!key) {
-            return res.status(200).json({ text: "Ошибка: Ключ API не найден в системе." });
+            return res.status(200).json({ text: "Ошибка: API ключ не настроен в Vercel." });
+        }
+
+        // Настройки персонажа
+        let s = { laconic: 5, empathy: 5, human: 5 };
+        try {
+            const saved = await kv.hgetall(`user:${userId}:chat:${chatId}:settings`);
+            if (saved) s = saved;
+        } catch (e) {
+            console.error("KV Error ignored");
         }
 
         const model = "gemini-3.1-flash-lite-preview";
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
-        // 2. Запрос к Google (используем встроенный fetch Node.js 18+)
         const geminiRes = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 system_instruction: { 
-                    parts: [{ text: "Ты — Geminка. Будь живой, используй сленг, отвечай лаконично." }] 
+                    parts: [{ text: `Ты ИИ. Настройки: лаконичность ${s.laconic}, эмпатия ${s.empathy}.` }] 
                 },
-                contents: [
-                    { role: "user", parts: [{ text: text }] }
-                ]
+                contents: [{ role: "user", parts: [{ text: String(text) }] }]
             })
         });
 
         const data = await geminiRes.json();
 
         if (data.error) {
-            return res.status(200).json({ text: `Google API Error: ${data.error.message}` });
+            return res.status(200).json({ text: `Google Error: ${data.error.message}` });
         }
 
-        const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Пустой ответ";
+        const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Модель промолчала.";
 
-        // 3. Сохранение в KV (делаем через await для надежности)
-        try {
-            await kv.rpush(`history:${chatId}`, JSON.stringify({ role: "model", text: aiText }));
-        } catch (kvErr) {
-            console.error("KV Error:", kvErr.message);
-        }
+        // Сохранение истории (не блокируем ответ)
+        kv.rpush(`history:${chatId}`, JSON.stringify({ role: "model", text: aiText })).catch(() => {});
 
         return res.status(200).json({ text: aiText });
 
     } catch (err) {
-        console.error("CRITICAL_ERROR:", err);
-        // Возвращаем 200, но с текстом ошибки, чтобы не было 500-й
-        return res.status(200).json({ text: `Критический сбой: ${err.message}` });
+        return res.status(200).json({ text: `Сбой сервера: ${err.message}` });
     }
 }
