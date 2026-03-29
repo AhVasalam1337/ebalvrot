@@ -2,9 +2,7 @@
   "name": "ebalvrot",
   "version": "1.0.0",
   "type": "module",
-  "main": "index.js",
   "dependencies": {
-    "@vercel/kv": "latest",
-    "node-fetch": "^3.3.2"
+    "@vercel/kv": "latest"
   }
 }
