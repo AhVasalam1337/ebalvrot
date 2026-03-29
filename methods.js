@@ -1,18 +1,17 @@
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
-
 export async function getGeminiResponse(systemInstruction, contents) {
-    const model = "gemini-3.1-flash-lite-preview"; 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) throw new Error("Ключ GEMINI_API_KEY не найден");
+
+    const model = "gemini-3.1-flash-lite-preview";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
     const payload = {
-        system_instruction: {
-            parts: [{ text: systemInstruction }]
-        },
-        contents: contents, // contents уже приходят полностью готовыми из api/chat.js
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents: contents,
         generationConfig: {
             temperature: 0.9,
             topP: 0.95,
-            maxOutputTokens: 2048,
+            maxOutputTokens: 2048
         }
     };
 
@@ -23,15 +22,13 @@ export async function getGeminiResponse(systemInstruction, contents) {
     });
 
     const data = await res.json();
-
-    if (data.error) {
-        console.error("Gemini API Detailed Error:", JSON.stringify(data.error, null, 2));
-        throw new Error(data.error.message);
+    
+    if (!res.ok || data.error) {
+        throw new Error(`Ошибка Gemini API: ${data?.error?.message || res.statusText}`);
     }
 
-    if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        throw new Error("Некорректный ответ от модели 3.1");
-    }
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error("Пустой ответ от модели");
 
-    return data.candidates[0].content.parts[0].text;
+    return text;
 }
