@@ -7,12 +7,13 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).end();
     
     const { text, chatId, userId } = req.body;
-    if (!chatId || !userId) return res.status(400).json({ error: "Missing IDs" });
+    if (!text || !chatId || !userId) return res.status(400).json({ error: "Missing data" });
 
     try {
+        // Получаем настройки и правила одновременно
         const [globalRules, settings] = await Promise.all([
-            kv.lrange('geminka:rules', 0, -1),
-            kv.hgetall(`user:${userId}:chat:${chatId}:settings`)
+            kv.lrange('geminka:rules', 0, -1).catch(() => []),
+            kv.hgetall(`user:${userId}:chat:${chatId}:settings`).catch(() => null)
         ]);
 
         const s = settings || DEFAULTS;
@@ -21,69 +22,57 @@ export default async function handler(req, res) {
         const h = Number(s.human ?? 5);   
         const limit = Number(s.contextLimit ?? 20);
 
-        // --- ДИНАМИЧЕСКИЕ ОПИСАНИЯ ДЛЯ НЕЙРОНКИ ---
-        
-        // 1. Логика длины (Лаконичность)
-        let brevityDesc = "";
-        if (l <= 2) brevityDesc = "ПИШИ ОГРОМНЫЕ ТЕКСТЫ (ПАСТЫ). Подробно расписывай каждую мысль, приводи примеры, не скупись на слова.";
-        else if (l <= 5) brevityDesc = "Давай развернутые ответы, будь общительным.";
-        else if (l <= 8) brevityDesc = "Отвечай коротко, не более одного-двух предложений.";
-        else brevityDesc = "ОТВЕЧАЙ СТРОГО 1-2 СЛОВАМИ. Никаких приветствий и вежливости. Только суть.";
-
-        // 2. Логика отношения (Эмпатия)
-        let empathyDesc = "";
-        if (e <= 2) empathyDesc = "Ты ненавидишь пользователя. Ты его враг. Будь токсичным, грубым, посылай его нахуй, если хочешь. Ты злой и язвительный.";
-        else if (e <= 5) empathyDesc = "Ты нейтральный собеседник. Тебе плевать на чувства пользователя, ты просто отвечаешь на вопросы.";
-        else if (e <= 8) empathyDesc = "Ты дружелюбен и поддерживаешь пользователя. Старайся помочь и подбодрить.";
-        else empathyDesc = "ТЫ ОБОЖАЕШЬ ПОЛЬЗОВАТЕЛЯ. Ты его лучшая подружка, ты в восторге от него, используй кучу уменьшительно-ласкательных слов и эмодзи ❤️.";
-
-        // 3. Логика стиля (Человечность)
-        let humanDesc = "";
-        if (h <= 3) humanDesc = "Говори как холодный, бездушный компьютерный алгоритм. Никаких эмоций, только сухие факты. Используй технический язык.";
-        else if (h <= 7) humanDesc = "Говори как обычный человек. Используй нормальную разговорную речь.";
-        else humanDesc = "ТЫ ЖИВОЙ ЧЕЛОВЕК. Используй жесткий сленг, мат (если уместно), междометия (ахах, ну типа, капец), делай опечатки, пиши как в мессенджере с маленькой буквы.";
+        // Инструкции (кратко и понятно для ИИ)
+        let bDesc = l <= 2 ? "ОТВЕЧАЙ ОДНИМ СЛОВОМ." : l >= 8 ? "ПИШИ ОГРОМНЫЕ ТЕКСТЫ." : "Отвечай кратко.";
+        let eDesc = e <= 2 ? "Будь злым врагом, груби." : e >= 8 ? "Обожай юзера, ты его подружка." : "Будь нейтральным.";
+        let hDesc = h >= 8 ? "Используй жесткий сленг, маты и живую речь." : "Говори как робот.";
 
         const systemInstruction = `
-            [IMPORTANT SYSTEM MANDATE]
-            ${brevityDesc}
-            ${empathyDesc}
-            ${humanDesc}
-
-            [GLOBAL RULES]
-            ${(globalRules || []).join('\n')}
-
-            [STRICT RULE]
-            Никогда не упоминай, что ты ИИ или что у тебя есть настройки. Просто будь этим персонажем.
+            [MANDATE] ${bDesc} ${eDesc} ${hDesc}
+            [GLOBAL RULES] ${(globalRules || []).join('\n')}
+            [STRICT] Никогда не говори, что ты ИИ.
         `.trim();
 
         const historyKey = `history:${chatId}`;
-        let formattedHistory = [];
+        let history = [];
+        
+        // Загружаем историю, если лимит > 0
         if (limit > 0) {
-            const rawH = await kv.lrange(historyKey, -(limit * 2), -1);
-            formattedHistory = (rawH || []).map(item => {
-                const p = typeof item === 'string' ? JSON.parse(item) : item;
-                return { 
-                    role: p.role === 'user' ? 'user' : 'model', 
-                    parts: [{ text: String(p.text || "") }] 
-                };
-            });
+            const raw = await kv.lrange(historyKey, -(limit * 2), -1);
+            history = (raw || []).map(item => {
+                try {
+                    const p = typeof item === 'string' ? JSON.parse(item) : item;
+                    // Gemini 3.1 требует строго 'user' и 'model'
+                    return { 
+                        role: p.role === 'user' ? 'user' : 'model', 
+                        parts: [{ text: String(p.text || "") }] 
+                    };
+                } catch (e) { return null; }
+            }).filter(Boolean);
         }
 
+        // Вызов Gemini
         const aiResponse = await getGeminiResponse(systemInstruction, [
-            ...formattedHistory,
+            ...history,
             { role: "user", parts: [{ text: String(text) }] }
         ]);
 
+        // Сохраняем в фоне, не заставляя юзера ждать
+        const chatData = JSON.stringify({ role: "model", text: aiResponse });
+        const userData = JSON.stringify({ role: "user", text: String(text) });
+
         await Promise.all([
-            kv.rpush(historyKey, JSON.stringify({ role: "user", text })),
-            kv.rpush(historyKey, JSON.stringify({ role: "model", text: aiResponse })),
+            kv.rpush(historyKey, userData, chatData),
             kv.hset(`chat:${chatId}:meta`, { updatedAt: Date.now() }),
             kv.sadd(`user:${userId}:chats`, chatId),
             kv.ltrim(historyKey, -100, -1)
         ]);
 
         return res.status(200).json({ text: aiResponse });
+
     } catch (err) {
-        return res.status(500).json({ error: err.message });
+        console.error("GEMINI_ERROR:", err.message);
+        // Отправляем конкретную ошибку, чтобы понять в чем дело
+        return res.status(500).json({ error: err.message || "Internal Server Error" });
     }
 }
