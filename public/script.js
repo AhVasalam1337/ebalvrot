@@ -6,11 +6,19 @@ const menuContent = document.getElementById('menuContent');
 const sidebar = document.getElementById('sidebar');
 const overlay = document.getElementById('overlay');
 
-// Инициализация ID пользователя
+// ЛОГИКА АВТОРИЗАЦИИ ПО КЛЮЧУ
 let userId = localStorage.getItem('pwa_user_id');
+
 if (!userId || userId === 'null' || userId === 'undefined') {
-    userId = 'u_' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('pwa_user_id', userId);
+    const promptId = prompt("Введите ваш ключ доступа (например, 777):", "");
+    if (promptId && promptId.trim()) {
+        userId = promptId.trim();
+        localStorage.setItem('pwa_user_id', userId);
+    } else {
+        // Если нажал "Отмена", создаем временный, но предупреждаем
+        userId = 'temp_' + Math.random().toString(36).substr(2, 5);
+        alert("Используется временный ID. Чаты могут пропасть после очистки куки.");
+    }
 }
 
 let currentChatId = localStorage.getItem('pwa_chat_id');
@@ -77,7 +85,7 @@ async function selectChat(id, name, isInitial = false) {
     localStorage.setItem('pwa_chat_id', id);
     
     chatNameDisplay.innerText = name || "Загрузка...";
-    msgDiv.innerHTML = '<div class="p-10 text-center text-gray-600 animate-pulse text-[10px] uppercase tracking-widest">Синхронизация истории...</div>';
+    msgDiv.innerHTML = '<div class="p-10 text-center text-gray-600 animate-pulse text-[10px] uppercase tracking-widest">Синхронизация...</div>';
     
     try {
         const data = await api('chat');
@@ -154,13 +162,23 @@ function renderMenu(state) {
         const items = [
             {i:'forum', t:'Диалоги', s:STATES.DIALOGS}, 
             {i:'gavel', t:'Правила системы', s:STATES.RULES}, 
-            {i:'tune', t:'Настройки ИИ', s:STATES.SETTINGS}
+            {i:'tune', t:'Настройки ИИ', s:STATES.SETTINGS},
+            {i:'logout', t:'Сменить ключ', s:'LOGOUT'}
         ];
         items.forEach(item => {
             const d = document.createElement('div');
             d.className = 'flex items-center gap-4 text-gray-300 p-4 hover:bg-white/5 rounded-2xl cursor-pointer transition-all active:scale-95';
             d.innerHTML = `<span class="material-icons-outlined text-gray-500">${item.i}</span><span class="text-sm font-semibold">${item.t}</span>`;
-            d.onclick = () => renderMenu(item.s);
+            d.onclick = () => {
+                if(item.s === 'LOGOUT') {
+                    if(confirm("Выйти и сменить ключ?")) {
+                        localStorage.clear();
+                        location.reload();
+                    }
+                } else {
+                    renderMenu(item.s);
+                }
+            };
             menuContent.appendChild(d);
         });
     } else if (state === STATES.DIALOGS) {
