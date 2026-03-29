@@ -277,8 +277,8 @@ window.deleteChat = async (id) => {
 
 function renderSettings() {
     const fields = [
-        {id:'laconic', n:'Краткость'}, {id:'empathy', n:'Эмпатия'}, 
-        {id:'human', n:'Сленг'}, {id:'contextLimit', n:'Память', max: 51}
+        {id:'laconic', n:'Лаконичность'}, {id:'empathy', n:'Эмпатия'}, 
+        {id:'human', n:'Человечность'}, {id:'contextLimit', n:'Память', max: 51}
     ];
     fields.forEach(f => {
         const div = document.createElement('div');
