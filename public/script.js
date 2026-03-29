@@ -15,7 +15,6 @@ if (!userId || userId === 'null' || userId === 'undefined') {
         userId = promptId.trim();
         localStorage.setItem('pwa_user_id', userId);
     } else {
-        // Если нажал "Отмена", создаем временный, но предупреждаем
         userId = 'temp_' + Math.random().toString(36).substr(2, 5);
         alert("Используется временный ID. Чаты могут пропасть после очистки куки.");
     }
@@ -38,6 +37,7 @@ function checkInput() {
 function renderMessage(text, role, animate = false) {
     const container = document.createElement('div');
     container.className = `flex gap-3 mb-5 ${role === 'user' ? 'flex-row-reverse' : ''}`;
+    
     const bubble = document.createElement('div');
     bubble.className = `${role === 'bot' ? 'bg-geminiBotMsg' : 'bg-geminiUserMsg'} p-4 rounded-2xl max-w-[85%] text-white border border-gray-800 whitespace-pre-wrap msg-anim`;
     if (animate) bubble.classList.add('animate-message-entry');
@@ -54,7 +54,7 @@ function renderMessage(text, role, animate = false) {
 }
 
 /**
- * API WRAPPER
+ * API WRAPPER ДЛЯ УПРАВЛЕНИЯ (RULES, SETTINGS, LIST)
  */
 async function api(action, method = 'GET', body = null, forceChatId = null) {
     const targetChatId = forceChatId || currentChatId || '';
@@ -95,8 +95,10 @@ async function selectChat(id, name, isInitial = false) {
         msgDiv.innerHTML = '';
         if (data.history && Array.isArray(data.history)) {
             data.history.forEach(m => {
-                const p = typeof m === 'string' ? JSON.parse(m) : m;
-                renderMessage(p.text, p.role === 'user' ? 'user' : 'bot');
+                try {
+                    const p = typeof m === 'string' ? JSON.parse(m) : m;
+                    renderMessage(p.text, p.role === 'user' ? 'user' : 'bot');
+                } catch(e) { console.error("Parse error in history", e); }
             });
         }
         if (!data.history || data.history.length === 0) {
@@ -127,15 +129,32 @@ async function handleSend() {
     renderMessage(text, 'user');
     
     try {
+        // КРИТИЧНО: Используем именно /api/chat для сообщений
         const res = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, chatId: currentChatId, userId })
+            body: JSON.stringify({ 
+                text, 
+                chatId: currentChatId, 
+                userId: userId 
+            })
         });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.text || `Ошибка сервера (${res.status})`);
+        }
+
         const data = await res.json();
-        if (data.text) renderMessage(data.text, 'bot', true);
+        
+        if (data.text) {
+            renderMessage(data.text, 'bot', true);
+        } else {
+            renderMessage("Получен пустой ответ от ИИ.", "bot");
+        }
     } catch (e) {
-        renderMessage("Ошибка сервера.", "bot");
+        console.error("Chat Error:", e);
+        renderMessage(`Ошибка: ${e.message}`, "bot");
     }
 }
 
@@ -156,7 +175,8 @@ function toggleMenu() {
 
 function renderMenu(state) {
     menuContent.innerHTML = '';
-    document.getElementById('backBtn').classList.toggle('hidden', state === STATES.MAIN);
+    const backBtn = document.getElementById('backBtn');
+    if (backBtn) backBtn.classList.toggle('hidden', state === STATES.MAIN);
     
     if (state === STATES.MAIN) {
         const items = [
@@ -224,6 +244,7 @@ async function syncDialogs() {
 }
 
 async function syncRules() {
+    menuContent.innerHTML = '<div class="p-6 text-center text-xs text-gray-600 animate-pulse uppercase tracking-widest">Загрузка...</div>';
     const data = await api('rules');
     menuContent.innerHTML = '';
 
@@ -276,9 +297,10 @@ window.deleteChat = async (id) => {
 };
 
 function renderSettings() {
+    menuContent.innerHTML = '';
     const fields = [
         {id:'laconic', n:'Лаконичность'}, {id:'empathy', n:'Эмпатия'}, 
-        {id:'human', n:'Человечность'}, {id:'contextLimit', n:'Память', max: 51}
+        {id:'human', n:'Человечность'}, {id:'contextLimit', n:'Память', max: 50}
     ];
     fields.forEach(f => {
         const div = document.createElement('div');
@@ -287,10 +309,10 @@ function renderSettings() {
         div.innerHTML = `
             <div class="flex justify-between text-[10px] text-gray-500 uppercase font-black mb-3 tracking-widest">
                 <span>${f.n}</span>
-                <span id="v_${f.id}" class="text-geminiAccent">${val == 51 ? '∞' : val}</span>
+                <span id="v_${f.id}" class="text-geminiAccent">${val == 50 ? '∞' : val}</span>
             </div>
             <input type="range" min="0" max="${f.max || 10}" value="${val}" class="w-full accent-geminiAccent h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer" 
-            oninput="userSettings['${f.id}']=parseInt(this.value); document.getElementById('v_${f.id}').innerText=(this.value == 51 ? '∞' : this.value)">`;
+            oninput="userSettings['${f.id}']=parseInt(this.value); document.getElementById('v_${f.id}').innerText=(this.value == 50 ? '∞' : this.value)">`;
         menuContent.appendChild(div);
     });
 
@@ -312,7 +334,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     input.addEventListener('keydown', (e) => (e.key === 'Enter' && !e.shiftKey) ? (e.preventDefault(), handleSend()) : null);
     document.getElementById('menuBtn').onclick = toggleMenu;
     overlay.onclick = toggleMenu;
-    document.getElementById('backBtn').onclick = () => renderMenu(STATES.MAIN);
+    const backBtn = document.getElementById('backBtn');
+    if (backBtn) backBtn.onclick = () => renderMenu(STATES.MAIN);
     sendBtn.onclick = handleSend;
 
     try {
