@@ -3,6 +3,7 @@ import { kv } from '@vercel/kv';
 export default async function handler(req, res) {
     const { method, query: { action, userId, chatId, text } } = req;
 
+    // Базовая проверка авторизации
     if (!userId || userId === 'null' || userId === 'undefined') {
         return res.status(200).json({ list: [] });
     }
@@ -14,17 +15,20 @@ export default async function handler(req, res) {
             if (!ids || ids.length === 0) return res.status(200).json({ list: [] });
 
             const list = await Promise.all(ids.map(async (id) => {
-                const meta = await kv.hgetall(`chat:${id}:meta`);
-                return { 
-                    id, 
-                    name: meta?.name || "Новый диалог", 
-                    updatedAt: Number(meta?.updatedAt || 0) 
-                };
+                try {
+                    const meta = await kv.hgetall(`chat:${id}:meta`);
+                    return { 
+                        id, 
+                        name: meta?.name || "Новый диалог", 
+                        updatedAt: Number(meta?.updatedAt || 0) 
+                    };
+                } catch (e) {
+                    return { id, name: "Ошибка загрузки", updatedAt: 0 };
+                }
             }));
 
-            // Сортируем: новые сверху
             const sortedList = list
-                .filter(i => i.id)
+                .filter(i => i && i.id)
                 .sort((a, b) => b.updatedAt - a.updatedAt);
 
             return res.status(200).json({ list: sortedList });
@@ -41,7 +45,7 @@ export default async function handler(req, res) {
                     kv.hgetall(`chat:${chatId}:meta`)
                 ]);
 
-                // Гарантируем связь пользователя с этим чатом
+                // Привязываем чат к юзеру, если еще не привязан
                 await kv.sadd(`user:${userId}:chats`, chatId);
 
                 return res.status(200).json({
@@ -52,14 +56,13 @@ export default async function handler(req, res) {
             }
 
             if (method === 'POST') {
-                const { name, settings } = req.body || {};
-                if (name) {
-                    await kv.hset(`chat:${chatId}:meta`, { name, updatedAt: Date.now() });
+                const body = req.body || {};
+                if (body.name) {
+                    await kv.hset(`chat:${chatId}:meta`, { name: body.name, updatedAt: Date.now() });
                 }
-                if (settings) {
-                    await kv.hset(`user:${userId}:chat:${chatId}:settings`, settings);
+                if (body.settings) {
+                    await kv.hset(`user:${userId}:chat:${chatId}:settings`, body.settings);
                 }
-                // При любом обновлении добавляем в список чатов пользователя
                 await kv.sadd(`user:${userId}:chats`, chatId);
                 return res.status(200).json({ success: true });
             }
@@ -80,10 +83,16 @@ export default async function handler(req, res) {
             const rulesKey = 'geminka:rules';
             if (method === 'GET') {
                 const rules = await kv.lrange(rulesKey, 0, -1);
-                return res.status(200).json({ rules: (rules || []).map((r, i) => ({ id: i, text: r })) });
+                const formattedRules = (rules || []).map((r, i) => {
+                    // Обработка случая, если правило сохранено как JSON-строка
+                    let content = r;
+                    try { content = JSON.parse(r).text || r; } catch(e) {}
+                    return { id: i, text: content };
+                });
+                return res.status(200).json({ rules: formattedRules });
             }
             if (method === 'POST') {
-                if (req.body.text) {
+                if (req.body && req.body.text) {
                     await kv.rpush(rulesKey, req.body.text);
                 }
                 return res.status(200).json({ success: true });
@@ -96,7 +105,7 @@ export default async function handler(req, res) {
             }
         }
 
-        return res.status(405).end();
+        return res.status(405).json({ error: "Method not allowed" });
     } catch (e) {
         console.error("KV Management Error:", e);
         return res.status(500).json({ error: e.message });
