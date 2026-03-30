@@ -1,9 +1,10 @@
-export async function getGeminiResponse(systemInstruction, contents) {
+export async function getGeminiStream(systemInstruction, contents) {
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new Error("Ключ GEMINI_API_KEY не найден");
 
     const model = "gemini-3.1-flash-lite-preview";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+    // ВАЖНО: URL меняется на streamGenerateContent
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${key}`;
 
     const payload = {
         system_instruction: { parts: [{ text: systemInstruction }] },
@@ -21,14 +22,12 @@ export async function getGeminiResponse(systemInstruction, contents) {
         body: JSON.stringify(payload)
     });
 
-    const data = await res.json();
-    
-    if (!res.ok || data.error) {
-        throw new Error(`Ошибка Gemini API: ${data?.error?.message || res.statusText}`);
+    if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error?.message || "Ошибка стриминга API");
     }
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("Пустой ответ от модели");
-
-    return text;
+    return res.body; // Возвращаем поток (ReadableStream)
 }
+
+// Старую функцию getGeminiResponse можно оставить для других нужд
