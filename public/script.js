@@ -15,7 +15,6 @@ if (!userId || userId === 'null' || userId === 'undefined') {
         userId = promptId.trim();
         localStorage.setItem('pwa_user_id', userId);
     } else {
-        // Если нажал "Отмена", создаем временный, но предупреждаем
         userId = 'temp_' + Math.random().toString(36).substr(2, 5);
         alert("Используется временный ID. Чаты могут пропасть после очистки куки.");
     }
@@ -38,10 +37,19 @@ function checkInput() {
 function renderMessage(text, role, animate = false) {
     const container = document.createElement('div');
     container.className = `flex gap-3 mb-5 ${role === 'user' ? 'flex-row-reverse' : ''}`;
+    
     const bubble = document.createElement('div');
-    bubble.className = `${role === 'bot' ? 'bg-geminiBotMsg' : 'bg-geminiUserMsg'} p-4 rounded-2xl max-w-[85%] text-white border border-gray-800 whitespace-pre-wrap msg-anim`;
+    // Убираем whitespace-pre-wrap, так как Markdown сам управляет переносами
+    bubble.className = `${role === 'bot' ? 'bg-geminiBotMsg' : 'bg-geminiUserMsg'} p-4 rounded-2xl max-w-[85%] text-white border border-gray-800 msg-anim prose prose-invert prose-sm`;
+    
     if (animate) bubble.classList.add('animate-message-entry');
-    bubble.innerText = text;
+    
+    // МАГИЯ ЗДЕСЬ: Если это бот, парсим Markdown. Если юзер — оставляем текст.
+    if (role === 'bot') {
+        bubble.innerHTML = marked.parse(text);
+    } else {
+        bubble.innerText = text;
+    }
     
     const avatar = role === 'bot' 
         ? `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full shrink-0">` 
