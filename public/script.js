@@ -22,6 +22,7 @@ if (!userId || userId === 'null' || userId === 'undefined') {
 
 let currentChatId = localStorage.getItem('pwa_chat_id');
 let userSettings = { laconic: 5, empathy: 5, human: 5, contextLimit: 20 };
+let currentOffset = 0; // Смещение для пагинации
 
 const STATES = { MAIN: 'MAIN', DIALOGS: 'DIALOGS', RULES: 'RULES', SETTINGS: 'SETTINGS' };
 
@@ -34,17 +35,15 @@ function checkInput() {
     sendBtn.style.opacity = text.length > 0 ? '1' : '0.5';
 }
 
-function renderMessage(text, role, animate = false) {
+function renderMessage(text, role, animate = false, prepend = false) {
     const container = document.createElement('div');
     container.className = `flex gap-3 mb-5 ${role === 'user' ? 'flex-row-reverse' : ''}`;
     
     const bubble = document.createElement('div');
-    // Убираем whitespace-pre-wrap, так как Markdown сам управляет переносами
     bubble.className = `${role === 'bot' ? 'bg-geminiBotMsg' : 'bg-geminiUserMsg'} p-4 rounded-2xl max-w-[85%] text-white border border-gray-800 msg-anim prose prose-invert prose-sm`;
     
     if (animate) bubble.classList.add('animate-message-entry');
     
-    // МАГИЯ ЗДЕСЬ: Если это бот, парсим Markdown. Если юзер — оставляем текст.
     if (role === 'bot') {
         bubble.innerHTML = marked.parse(text);
     } else {
@@ -57,8 +56,15 @@ function renderMessage(text, role, animate = false) {
     
     container.innerHTML = avatar;
     container.appendChild(bubble);
-    msgDiv.appendChild(container);
-    msgDiv.scrollTop = msgDiv.scrollHeight;
+
+    if (prepend) {
+        // Добавляем в начало (для истории)
+        msgDiv.prepend(container);
+    } else {
+        // Добавляем в конец (для новых)
+        msgDiv.appendChild(container);
+        msgDiv.scrollTop = msgDiv.scrollHeight;
+    }
 }
 
 /**
@@ -87,28 +93,64 @@ async function api(action, method = 'GET', body = null, forceChatId = null) {
 /**
  * ЛОГИКА ЧАТА
  */
+async function loadHistoryChunk() {
+    try {
+        const res = await fetch(`/api/history?chatId=${currentChatId}&offset=${currentOffset}`);
+        const data = await res.json();
+        
+        if (data.messages && data.messages.length > 0) {
+            // Удаляем кнопку "Еще", если она есть, перед добавлением новых сообщений
+            const oldBtn = document.getElementById('load-more-btn');
+            if (oldBtn) oldBtn.remove();
+
+            // Сообщения из API приходят от новых к старым (из-за lrange -10 -1)
+            // Но мы их вставляем в начало по одному, поэтому переворачиваем, 
+            // чтобы сохранить хронологию внутри пачки
+            data.messages.reverse().forEach(m => {
+                renderMessage(m.text, m.role === 'user' ? 'user' : 'bot', false, true);
+            });
+
+            currentOffset += data.messages.length;
+
+            if (data.hasMore) {
+                const btn = document.createElement('button');
+                btn.id = 'load-more-btn';
+                btn.className = 'w-full py-3 mb-4 text-[10px] text-gray-500 uppercase tracking-widest hover:text-geminiAccent transition-colors';
+                btn.innerText = 'Показать предыдущие сообщения';
+                btn.onclick = loadHistoryChunk;
+                msgDiv.prepend(btn);
+            }
+        }
+    } catch (e) {
+        console.error("Ошибка загрузки истории:", e);
+    }
+}
+
 async function selectChat(id, name, isInitial = false) {
     if (!id) return;
     currentChatId = id;
+    currentOffset = 0; // Сбрасываем смещение
     localStorage.setItem('pwa_chat_id', id);
     
     chatNameDisplay.innerText = name || "Загрузка...";
     msgDiv.innerHTML = '<div class="p-10 text-center text-gray-600 animate-pulse text-[10px] uppercase tracking-widest">Синхронизация...</div>';
     
     try {
+        // Загружаем настройки и мету
         const data = await api('chat');
         userSettings = data.settings || userSettings;
         chatNameDisplay.innerText = data.meta?.name || name || "Чат";
         
         msgDiv.innerHTML = '';
-        if (data.history && Array.isArray(data.history)) {
-            data.history.forEach(m => {
-                const p = typeof m === 'string' ? JSON.parse(m) : m;
-                renderMessage(p.text, p.role === 'user' ? 'user' : 'bot');
-            });
-        }
-        if (!data.history || data.history.length === 0) {
+        
+        // Загружаем первую пачку истории
+        await loadHistoryChunk();
+
+        if (msgDiv.children.length === 0) {
             msgDiv.innerHTML = '<div class="p-10 text-center text-gray-700 text-[10px] uppercase tracking-[0.2em]">История пуста</div>';
+        } else {
+            // Скроллим вниз после первой загрузки
+            msgDiv.scrollTop = msgDiv.scrollHeight;
         }
     } catch (e) {
         msgDiv.innerHTML = '<div class="p-10 text-center text-red-500 text-xs">ОШИБКА ПОДКЛЮЧЕНИЯ</div>';
@@ -133,6 +175,7 @@ async function handleSend() {
     input.value = '';
     checkInput();
     renderMessage(text, 'user');
+    currentOffset++; // Увеличиваем оффсет, так как в базе стало на 1 сообщение больше
     
     try {
         const res = await fetch('/api/chat', {
@@ -141,7 +184,10 @@ async function handleSend() {
             body: JSON.stringify({ text, chatId: currentChatId, userId })
         });
         const data = await res.json();
-        if (data.text) renderMessage(data.text, 'bot', true);
+        if (data.text) {
+            renderMessage(data.text, 'bot', true);
+            currentOffset++; // И еще на одно (ответ бота)
+        }
     } catch (e) {
         renderMessage("Ошибка сервера.", "bot");
     }
