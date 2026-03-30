@@ -175,21 +175,58 @@ async function handleSend() {
     input.value = '';
     checkInput();
     renderMessage(text, 'user');
-    currentOffset++; // Увеличиваем оффсет, так как в базе стало на 1 сообщение больше
+    currentOffset++;
+
+    // Создаем контейнер для ответа бота
+    const container = document.createElement('div');
+    container.className = `flex gap-3 mb-5`;
+    const bubble = document.createElement('div');
+    bubble.className = `bg-geminiBotMsg p-4 rounded-2xl max-w-[85%] text-white border border-gray-800 msg-anim prose prose-invert prose-sm`;
+    bubble.innerHTML = '<span class="animate-pulse">...</span>';
     
+    const avatar = `<img src="https://i.imgur.com/JgGswRe.png" class="w-9 h-9 rounded-full shrink-0">`;
+    container.innerHTML = avatar;
+    container.appendChild(bubble);
+    msgDiv.appendChild(container);
+    msgDiv.scrollTop = msgDiv.scrollHeight;
+
     try {
         const res = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, chatId: currentChatId, userId })
         });
-        const data = await res.json();
-        if (data.text) {
-            renderMessage(data.text, 'bot', true);
-            currentOffset++; // И еще на одно (ответ бота)
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulatedText = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n\n');
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const rawData = line.replace('data: ', '');
+                    if (rawData === '[DONE]') break;
+                    
+                    try {
+                        const parsed = JSON.parse(rawData);
+                        if (parsed.text) {
+                            accumulatedText += parsed.text;
+                            bubble.innerHTML = marked.parse(accumulatedText);
+                            msgDiv.scrollTop = msgDiv.scrollHeight;
+                        }
+                    } catch (e) {}
+                }
+            }
         }
+        currentOffset++;
     } catch (e) {
-        renderMessage("Ошибка сервера.", "bot");
+        bubble.innerText = "Ошибка сети.";
     }
 }
 
